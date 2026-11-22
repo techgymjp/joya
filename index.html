@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>除夜の鐘</title>
+  <meta name="description" content="大晦日の夜、108回の鐘をつく3Dウェブゲーム。遠くの寺の鐘と同時に撞けば共鳴コンボ。">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.js",
+        "three/addons/": "./vendor/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- プレイ中のHUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="hud-box left">
+        <div class="count"><span class="label">第</span><span id="count">0</span><span class="label">打</span><span class="total">/ <span id="total">108</span></span></div>
+        <div class="clock" id="clock">23:00</div>
+      </div>
+      <div class="temples" id="temples"></div>
+      <div class="hud-box right">
+        <div class="score-label">得点</div>
+        <div class="score" id="score">0</div>
+        <div class="combo" id="combo"></div>
+        <button id="mute" class="icon-btn" aria-label="音の切り替え">♪</button>
+      </div>
+    </div>
+
+    <div class="gauge" id="gauge" aria-hidden="true">
+      <div class="gauge-label">引き</div>
+      <div class="gauge-bar">
+        <div class="marker" id="gaugeMarker"></div>
+      </div>
+      <div class="yoin">
+        <div class="yoin-ring" id="yoinRing"></div>
+        <div class="gauge-label">余韻</div>
+      </div>
+    </div>
+
+    <div id="popups"></div>
+
+    <div class="bonnou-area">
+      <div class="bonnou-caption" id="bonnouCaption">払う煩悩</div>
+      <div class="bonnou" id="bonnou"></div>
+    </div>
+    <div class="hint" id="hint">長押しで撞木を引き、離して撞く</div>
+    <div class="banner hidden" id="banner"></div>
+  </div>
+
+  <!-- タイトル -->
+  <div id="title" class="overlay">
+    <div class="panel">
+      <h1>除夜の鐘</h1>
+      <p class="sub">大晦日の夜。百八の煩悩を、ひと撞きずつ払う。</p>
+      <ul class="howto">
+        <li><b>長押し</b>（クリック・タップ・スペース）で撞木を引く。離すと撞木が鐘にぶつかる。長く引くほど強く響く。</li>
+        <li>鐘の<b>余韻</b>が消えてから撞くと心が整い、得点が上がる。</li>
+        <li>遠くの寺でも鐘が鳴っている。上の印が満ちる瞬間に<b>同時に鳴らす</b>と「共鳴」。続けるとコンボ。引く時間を見越して早めに構えよう。</li>
+        <li>107打目のあと年が明ける。最後の一打は新年に。</li>
+      </ul>
+      <div class="buttons">
+        <button class="btn primary" data-mode="108">本式　百八打</button>
+        <button class="btn" data-mode="12">おためし　十二打</button>
+      </div>
+      <p class="best" id="best"></p>
+      <p class="note">音が出ます。イヤホン推奨。</p>
+    </div>
+  </div>
+
+  <!-- 結果 -->
+  <div id="result" class="overlay hidden">
+    <div class="panel">
+      <div class="kinga">謹賀新年</div>
+      <div class="year" id="resYear"></div>
+      <div class="rank" id="resRank"></div>
+      <div class="res-score"><span id="resScore">0</span><small>点</small></div>
+      <table class="res-table">
+        <tr><th>見事</th><td id="resGreat">0</td><th>良し</th><td id="resGood">0</td></tr>
+        <tr><th>やや弱い</th><td id="resOk">0</td><th>かすか</th><td id="resBad">0</td></tr>
+        <tr><th>共鳴</th><td id="resReso">0</td><th>最大コンボ</th><td id="resMaxCombo">0</td></tr>
+      </table>
+      <p class="res-msg" id="resMsg"></p>
+      <p class="best" id="resBest"></p>
+      <div class="buttons">
+        <button class="btn primary" id="retry">もう一度</button>
+        <button class="btn" id="toTitle">タイトルへ</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading" class="overlay"><div class="loading-text">鐘楼を建てています…</div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
