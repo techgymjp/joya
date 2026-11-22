@@ -53,7 +53,7 @@ export class BellAudio {
     // スマホのスピーカーで鳴らない重低音はカット（震えて濁るのを防ぐ）
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.value = LOW ? 140 : 70;
+    hp.frequency.value = LOW ? 100 : 70; // 「ゴーン」の芯（約160Hz）は残す
     hp.Q.value = 0.6;
     // 最後にピークだけを抑えるリミッター（重なっても割れない）
     const lim = ctx.createDynamicsCompressor();
@@ -69,7 +69,7 @@ export class BellAudio {
     // 残響（合成インパルス応答）
     this.reverb = ctx.createConvolver();
     // 残響（スマホは短くして計算を軽く）
-    this.reverb.buffer = LOW ? this.impulse(2.6, 2.6) : this.impulse(5.5, 2.2);
+    this.reverb.buffer = LOW ? this.impulse(4.2, 2.3) : this.impulse(5.5, 2.2);
     this.reverbGain = ctx.createGain();
     this.reverbGain.gain.value = 0.5;
     this.reverb.connect(this.reverbGain).connect(this.master);
@@ -292,8 +292,7 @@ export class BellAudio {
     tail.connect(wetG).connect(this.reverb);
 
     let end = t;
-    // スマホは聞こえにくい高い倍音を省いて軽くする
-    for (const [ratio, amp, decay, beat, depth] of (LOW ? PARTIALS.slice(0, 6) : PARTIALS)) {
+    for (const [ratio, amp, decay, beat, depth] of PARTIALS) {
       const f = base * ratio * (1 + (Math.random() - 0.5) * 0.003);
       // 強く撞くほど高い倍音まで鳴る
       const bright = ratio > 3 ? 0.3 + 0.7 * power : 1;
@@ -302,7 +301,7 @@ export class BellAudio {
       // 低い倍音はやや遅れて膨らむ（「ゴッ…ォーーン」）
       const attack = ratio < 2.5 ? 0.06 : 0.012;
       const pair = [[-beat / 2, 1], [beat / 2, depth]];
-      for (const [df, w] of pair) {
+      for (const [pi, [df, w]] of pair.entries()) {
         const o = ctx.createOscillator();
         o.type = 'sine';
         o.frequency.value = f + df;
@@ -313,13 +312,20 @@ export class BellAudio {
         // 最初の1秒で少し落ち、その後ゆっくり長く消える
         g.gain.exponentialRampToValueAtTime(peak * 0.55, t + attack + 0.9);
         g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-        o.connect(g).connect(out);
+        // うなりの対を左右に少し振り分け、「おーん、おーん」を広がりのある響きに
+        if (ctx.createStereoPanner) {
+          const sp = ctx.createStereoPanner();
+          sp.pan.value = (pi ? 0.35 : -0.35) * (ratio > 1.5 ? 1 : 0.5);
+          o.connect(g).connect(sp).connect(out);
+        } else {
+          o.connect(g).connect(out);
+        }
         o.start(t);
         o.stop(t + d + 0.05);
       }
     }
     // 金属の「ガン」
-    for (const [ratio, amp, decay] of (LOW ? CLANG.slice(0, 2) : CLANG)) {
+    for (const [ratio, amp, decay] of CLANG) {
       const o = ctx.createOscillator();
       o.type = 'sine';
       o.frequency.value = base * ratio * (1 + (Math.random() - 0.5) * 0.01);
@@ -359,7 +365,7 @@ export class BellAudio {
 
   // 遠くの寺の鐘：高音が少しこもり、残響多め。小さなスピーカーでも聞こえる音量にする
   distantBell(power, pitch, pan, distanceGain = 0.55) {
-    this.bell(power, { pitch, gain: distanceGain, cutoff: 2600, pan, wet: 0.9, dry: 0.75 });
+    this.bell(power, { pitch, gain: distanceGain * 0.8, cutoff: 2600, pan, wet: 0.9, dry: 0.75 });
   }
 
   // 共鳴コンボ時の澄んだ響き
