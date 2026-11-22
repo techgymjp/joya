@@ -22,26 +22,26 @@
   <div id="hud" class="hidden">
     <div class="hud-top">
       <div class="hud-box left">
-        <div class="count"><span class="label">第</span><span id="count">0</span><span class="label">打</span><span class="total">/ <span id="total">108</span></span></div>
+        <div class="count"><span class="label" data-i18n="countPre">第</span><span id="count">0</span><span class="label" data-i18n="countPost">打</span><span class="total">/ <span id="total">108</span></span></div>
         <div class="clock" id="clock">23:00</div>
       </div>
       <div class="temples" id="temples"></div>
       <div class="hud-box right">
-        <div class="score-label">得点</div>
+        <div class="score-label" data-i18n="score">得点</div>
         <div class="score" id="score">0</div>
         <div class="combo" id="combo"></div>
-        <button id="mute" class="icon-btn" aria-label="音の切り替え">♪</button>
+        <button id="mute" class="icon-btn" aria-label="音の切り替え" data-i18n-aria="mute">♪</button>
       </div>
     </div>
 
     <div class="gauge" id="gauge" aria-hidden="true">
-      <div class="gauge-label">引き</div>
+      <div class="gauge-label" data-i18n="pull">引き</div>
       <div class="gauge-bar">
         <div class="marker" id="gaugeMarker"></div>
       </div>
       <div class="yoin">
         <div class="yoin-ring" id="yoinRing"></div>
-        <div class="gauge-label">余韻</div>
+        <div class="gauge-label" data-i18n="yoin">余韻</div>
       </div>
     </div>
 
@@ -51,52 +51,80 @@
       <div class="bonnou-caption" id="bonnouCaption">払う煩悩</div>
       <div class="bonnou" id="bonnou"></div>
     </div>
-    <div class="hint" id="hint">長押しで撞木を引き、離して撞く</div>
+    <div class="hint" id="hint" data-i18n="hint">長押しで撞木を引き、離して撞く</div>
     <div class="banner hidden" id="banner"></div>
   </div>
 
   <!-- タイトル -->
   <div id="title" class="overlay">
-    <div class="panel">
-      <h1>除夜の鐘</h1>
-      <p class="sub">大晦日の夜。百八の煩悩を、ひと撞きずつ払う。</p>
-      <ul class="howto">
-        <li><b>長押し</b>（クリック・タップ・スペース）で撞木を引く。離すと撞木が鐘にぶつかる。長く引くほど強く響く。</li>
-        <li>鐘の<b>余韻</b>が消えてから撞くと心が整い、得点が上がる。</li>
-        <li>遠くの寺でも和尚が鐘をついている。上の<b>遠見の窓</b>で和尚の引き方を見て、<b>同時に鳴らす</b>と「共鳴」。続けるとコンボ。和尚は「ためし引き」をすることもあるので、よく見て。寺は30打ごとに増える。</li>
-        <li>107打目のあと年が明ける。最後の一打は新年に。</li>
-      </ul>
+    <div class="panel title-panel">
+      <h1 data-i18n="title">除夜の鐘</h1>
+      <p class="sub" data-i18n="sub">百八の煩悩を、ひと撞きずつ。</p>
       <div class="buttons">
-        <button class="btn primary" data-mode="108">本式　百八打</button>
-        <button class="btn" data-mode="12">おためし　十二打</button>
+        <button class="btn primary" id="start" data-i18n="start">鐘をつく</button>
+        <button class="btn" id="openHowto" data-i18n="howto">遊び方</button>
       </div>
       <p class="best" id="best"></p>
-      <p class="note">音が出ます。イヤホン推奨。</p>
+      <p class="note" data-i18n="soundNote">音が出ます</p>
+      <button class="lang-btn" data-lang-toggle data-i18n="langBtn">English</button>
+    </div>
+  </div>
+
+  <!-- 遊び方 -->
+  <div id="howto" class="overlay hidden">
+    <div class="panel howto-panel">
+      <h2 data-i18n="howto">遊び方</h2>
+      <section>
+        <h3><span class="num" data-i18n-num="0">一</span><span data-i18n="h1t">撞木を引いて、離す</span></h3>
+        <p data-i18n="h1p"><b>長押し</b>（クリック・タップ・スペースキー）で撞木を引き、<b>離す</b>と鐘にぶつかります。長く引くほど強く響きます（約1.4秒で最大）。</p>
+      </section>
+      <section>
+        <h3><span class="num" data-i18n-num="1">二</span><span data-i18n="h2t">余韻を聴く</span></h3>
+        <p data-i18n="h2p">前の鐘の響きが消えてから撞くと心が整い、得点が上がります。左の「余韻」の輪が小さくなるのが目安です。</p>
+      </section>
+      <section>
+        <h3><span class="num" data-i18n-num="2">三</span><span data-i18n="h3t">遠くの寺と共鳴する</span></h3>
+        <p data-i18n="h3p">遠くの寺でも和尚が鐘をついています。画面上の<b>遠見の窓</b>で和尚の引き方を見て、<b>同時に鳴らす</b>と「共鳴」。続けるとコンボになり、二つの寺と同時なら「大共鳴」です。</p>
+        <p data-i18n="h3p2">和尚は本番の前に「ためし引き」をすることがあり、引く速さも毎回変わります。撞木が鐘に届くまでの時間を見越して、早めに引き始めましょう。</p>
+      </section>
+      <section>
+        <h3><span class="num" data-i18n-num="3">四</span><span data-i18n="h4t">寺が増える</span></h3>
+        <p data-i18n="h4p">はじめは西の寺だけ。30打ごとに東の寺、北の寺が加わります。</p>
+      </section>
+      <section>
+        <h3><span class="num" data-i18n-num="4">五</span><span data-i18n="h5t">年を越す</span></h3>
+        <p data-i18n="h5p">107打目のあと年が明けます。最後の一打は新年に。百八打を終えると、得点に応じた位が授けられます。</p>
+      </section>
+      <div class="buttons">
+        <button class="btn primary" id="howtoStart" data-i18n="start">鐘をつく</button>
+        <button class="btn" id="closeHowto" data-i18n="back">戻る</button>
+      </div>
+      <button class="lang-btn" data-lang-toggle data-i18n="langBtn">English</button>
     </div>
   </div>
 
   <!-- 結果 -->
   <div id="result" class="overlay hidden">
     <div class="panel">
-      <div class="kinga">謹賀新年</div>
+      <div class="kinga" data-i18n="kinga">謹賀新年</div>
       <div class="year" id="resYear"></div>
       <div class="rank" id="resRank"></div>
-      <div class="res-score"><span id="resScore">0</span><small>点</small></div>
+      <div class="res-score"><span id="resScore">0</span><small data-i18n="points">点</small></div>
       <table class="res-table">
-        <tr><th>見事</th><td id="resGreat">0</td><th>良し</th><td id="resGood">0</td></tr>
-        <tr><th>やや弱い</th><td id="resOk">0</td><th>かすか</th><td id="resBad">0</td></tr>
-        <tr><th>共鳴</th><td id="resReso">0</td><th>最大コンボ</th><td id="resMaxCombo">0</td></tr>
+        <tr><th data-i18n="great">見事</th><td id="resGreat">0</td><th data-i18n="good">良し</th><td id="resGood">0</td></tr>
+        <tr><th data-i18n="ok">やや弱い</th><td id="resOk">0</td><th data-i18n="bad">かすか</th><td id="resBad">0</td></tr>
+        <tr><th data-i18n="reso">共鳴</th><td id="resReso">0</td><th data-i18n="maxCombo">最大コンボ</th><td id="resMaxCombo">0</td></tr>
       </table>
       <p class="res-msg" id="resMsg"></p>
       <p class="best" id="resBest"></p>
       <div class="buttons">
-        <button class="btn primary" id="retry">もう一度</button>
-        <button class="btn" id="toTitle">タイトルへ</button>
+        <button class="btn primary" id="retry" data-i18n="retry">もう一度</button>
+        <button class="btn" id="toTitle" data-i18n="toTitle">タイトルへ</button>
       </div>
     </div>
   </div>
 
-  <div id="loading" class="overlay"><div class="loading-text">鐘楼を建てています…</div></div>
+  <div id="loading" class="overlay"><div class="loading-text" data-i18n="loading">鐘楼を建てています…</div></div>
 
   <script type="module" src="js/main.js"></script>
 </body>

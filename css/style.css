@@ -219,3 +219,45 @@ h1 {
   .gauge { left: 10px; }
   .howto { font-size: 14px; }
 }
+
+/* ---- タイトル（簡潔） ---- */
+.title-panel { padding: 40px 24px 24px; }
+.title-panel .sub { margin-bottom: 28px; }
+
+/* ---- 遊び方ページ ---- */
+.overlay#howto { align-items: flex-start; }
+.howto-panel { text-align: left; margin: auto 0; max-width: 620px; }
+.howto-panel h2 {
+  margin: 0 0 18px; text-align: center; font-weight: 600;
+  font-size: 30px; letter-spacing: 0.3em; color: var(--gold);
+}
+.howto-panel section { padding: 12px 0; border-top: 1px solid rgba(232,194,122,0.15); }
+.howto-panel h3 { margin: 0 0 6px; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.howto-panel h3 .num {
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1px solid var(--gold); color: var(--gold); font-size: 14px;
+}
+.howto-panel p { margin: 4px 0 0 38px; line-height: 1.75; font-size: 15px; color: var(--ink-dim); }
+.howto-panel p b { color: var(--ink); font-weight: 600; }
+.howto-panel .buttons { margin-top: 18px; }
+
+/* 言語切り替え */
+.lang-btn {
+  display: block; margin: 14px auto 0;
+  font-family: var(--font); font-size: 13px; letter-spacing: 0.08em;
+  background: transparent; color: var(--ink-dim);
+  border: 1px solid rgba(232,194,122,0.35); border-radius: 999px;
+  padding: 5px 16px; cursor: pointer;
+}
+.lang-btn:hover { color: var(--ink); border-color: var(--gold); }
+
+/* 英語表示の調整 */
+:lang(en) h1 { letter-spacing: 0.06em; padding-left: 0; font-size: clamp(38px, 10vw, 60px); }
+:lang(en) .sub, :lang(en) .bonnou-caption { letter-spacing: 0.04em; }
+:lang(en) .bonnou { letter-spacing: 0.03em; font-size: clamp(26px, 6vw, 44px); }
+:lang(en) .kinga { letter-spacing: 0.06em; padding-left: 0; }
+:lang(en) .banner .b-main { letter-spacing: 0.08em; }
+:lang(en) .rank, :lang(en) .popup .p-main, :lang(en) .howto-panel h2 { letter-spacing: 0.05em; }
+:lang(en) .count { font-size: 24px; }
+:lang(en) .count .label { margin-right: 6px; }

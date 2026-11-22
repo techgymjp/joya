@@ -12,3 +12,18 @@ export const BONNOU = [
   '冷やかし', '皮肉', '屁理屈', '揚げ足取り', '横着', '図々しさ', '恩知らず', 'ケチ', '賭け事', '迷い',
   '自暴自棄', '驕り', '怖れ', '孤独感', '無関心', '我執', '妄想', '迷妄',
 ];
+
+// 英語版（上の一覧と同じ順番）
+export const BONNOU_EN = [
+  'Greed', 'Anger', 'Grumbling', 'Complacency', 'Doubt', 'Jealousy', 'Laziness', 'Arrogance', 'Clinging', 'Vanity',
+  'Impatience', 'Anxiety', 'Regret', 'Materialism', 'Overeating', 'Overdrinking', 'Staying up late', 'Hitting snooze', 'Oversleeping', 'Procrastination',
+  'Quitting in three days', 'Impulse buying', 'Showing off', 'Stubborn pride', 'Jumping to conclusions', 'Indecision', 'Taking it out on others', 'Sour grapes', 'Excuses', 'Complaining',
+  'Badmouthing', 'Gossip', 'Resentment', 'Grudges', 'Short temper', 'Hastiness', 'Obstinacy', 'Selfishness', 'Wastefulness', 'Messiness',
+  'Doomscrolling', 'Phone addiction', 'Unread book pile', 'Game backlog', 'Failed diets', 'Too little exercise', 'Snacking', 'Midnight snacks', 'Sleep deprivation', 'Lateness',
+  'Forgetfulness', 'Bragging', 'Pretending to know', 'Condescension', 'Comparing yourself', 'Craving approval', 'One-upmanship', 'Perfectionism', 'Worrying', 'Needless worry',
+  'Paranoia', 'Self-loathing', 'Servility', 'Giving up easily', "Can't be bothered", 'Relying on others', 'Passing the blame', 'Favoritism', 'Pickiness', 'Prejudice',
+  'Self-righteousness', 'Fickleness', 'Easily bored', 'Escapism', 'Lingering attachment', 'Lies', 'Looking the other way', 'Talking back', 'Sighing', 'Tutting',
+  'Fidgeting', 'Wolfing food', 'Idle sleep', 'Binge eating', 'Sneaking ahead', 'Possessiveness', 'Need for control', 'Thirst for fame', 'Love of money', 'Lashing back',
+  'Teasing', 'Sarcasm', 'Quibbling', 'Nitpicking', 'Cutting corners', 'Brazenness', 'Ingratitude', 'Stinginess', 'Gambling', 'Hesitation',
+  'Self-destruction', 'Hubris', 'Fear', 'Loneliness', 'Indifference', 'Ego', 'Delusion', 'Illusion',
+];

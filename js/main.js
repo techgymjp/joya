@@ -1,7 +1,8 @@
 // 除夜の鐘 — ゲーム進行
 import { World, TEMPLE_DEFS } from './world.js';
 import { BellAudio } from './audio.js';
-import { BONNOU } from './bonnou.js';
+import { BONNOU, BONNOU_EN } from './bonnou.js';
+import { t as tr, getLang, setLang, applyStatic } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -57,7 +58,7 @@ function planTemple(t, start) {
 
 function activeTempleCount() {
   if (game.state === 'title' || game.state === 'end') return 1;
-  const every = game.total >= 108 ? 30 : Math.max(2, Math.round((game.total * 30) / 108));
+  const every = 30;
   return Math.min(TEMPLE_DEFS.length, 1 + Math.floor(game.count / every));
 }
 
@@ -68,7 +69,7 @@ function updateActiveTemples(announce) {
     if (on !== t.active) {
       t.active = on;
       world.setTempleActive(t.idx, on);
-      if (on && announce) popup(`${t.def.name}も鐘をつき始めた`, '和尚の引き方を見て、同時に鳴らそう', 'reso');
+      if (on && announce) popup(tr('joined', templeName(t.idx)), tr('joinedSub'), 'reso');
     }
     templeEls[t.idx].classList.toggle('off', !on);
     if (!on) t.plan = null;
@@ -128,7 +129,7 @@ function onTempleRing(t, power) {
 const templeEls = TEMPLE_DEFS.map((d) => {
   const el = document.createElement('div');
   el.className = 'temple';
-  el.innerHTML = `<div class="view"></div><div class="name">${d.name}</div>`;
+  el.innerHTML = '<div class="view"></div><div class="name"></div>';
   $('temples').appendChild(el);
   return el;
 });
@@ -148,12 +149,28 @@ function banner(text, sub = '') {
 }
 function hideBanner() { $('banner').classList.add('hidden'); }
 
+function templeName(i) { return tr('temples')[i]; }
+
+function wordAt(n) {
+  const i = game.words[n];
+  if (i === undefined) return '';
+  return (getLang() === 'en' ? BONNOU_EN : BONNOU)[i];
+}
+
 function setBonnou() {
   const el = $('bonnou');
-  const w = game.words[game.count];
-  el.textContent = w || '';
+  const w = game.state === 'countdown' ? '' : wordAt(game.count);
+  el.textContent = w;
   el.classList.remove('vanish');
-  $('bonnouCaption').textContent = w ? `払う煩悩　其の${game.count + 1}` : '';
+  $('bonnouCaption').textContent = w ? tr('caption', game.count + 1) : '';
+}
+
+function applyLang() {
+  applyStatic();
+  templeEls.forEach((el, i) => { el.querySelector('.name').textContent = templeName(i); });
+  if (game.state !== 'title') { setBonnou(); updateHud(); }
+  const best = loadBest(108);
+  $('best').textContent = best ? tr('best', best) : '';
 }
 
 function vanishBonnou() {
@@ -184,7 +201,7 @@ function updateHud() {
   $('count').textContent = game.count;
   $('total').textContent = game.total;
   $('score').textContent = game.score;
-  $('combo').textContent = game.combo >= 1 ? `共鳴 ${game.combo} 連` : '';
+  $('combo').textContent = game.combo >= 1 ? tr('comboHud', game.combo) : '';
   updateClock();
 }
 
@@ -206,17 +223,18 @@ function onPlayerStrike(power) {
 
   // 強さ
   let ratingText, rk;
-  if (power >= 0.92) { ratingText = '見事'; rk = 'great'; }
-  else if (power >= 0.65) { ratingText = '良し'; rk = 'good'; }
-  else if (power >= 0.35) { ratingText = 'やや弱い'; rk = 'ok'; }
-  else { ratingText = 'かすか'; rk = 'bad'; }
+  if (power >= 0.92) rk = 'great';
+  else if (power >= 0.65) rk = 'good';
+  else if (power >= 0.35) rk = 'ok';
+  else rk = 'bad';
+  ratingText = tr(rk);
   game.stats[rk]++;
   const powerPts = Math.round(60 * power);
   // 余韻
   let yoinPts, yoinText;
-  if (game.count === 1 || yoin < 0.15) { yoinPts = 20; yoinText = '余韻を聴いた'; }
-  else if (yoin > 0.55) { yoinPts = 0; yoinText = 'せっかち'; }
-  else { yoinPts = Math.round(20 * (1 - (yoin - 0.15) / 0.4)); yoinText = '余韻が残る'; }
+  if (game.count === 1 || yoin < 0.15) { yoinPts = 20; yoinText = tr('yoinGood'); }
+  else if (yoin > 0.55) { yoinPts = 0; yoinText = tr('yoinBad'); }
+  else { yoinPts = Math.round(20 * (1 - (yoin - 0.15) / 0.4)); yoinText = tr('yoinMid'); }
   const pts = powerPts + yoinPts;
   game.score += pts;
   popup(ratingText, `${yoinText}　+${pts}`, rk);
@@ -236,11 +254,11 @@ function onPlayerStrike(power) {
     game.countdownT = -2.5;
     $('bonnou').textContent = '';
     $('bonnouCaption').textContent = '';
-    banner('まもなく年が明けます', '最後の一打は新年に');
+    banner(tr('soon'), tr('soonSub'));
   } else if (game.count >= game.total) {
     game.state = 'end';
     setTimeout(() => {
-      banner('謹賀新年', `${newYear()}年`);
+      banner(tr('newYear'), tr('year', newYear()));
       world.dawn = 0.6;
     }, 900);
     setTimeout(showResult, 6000);
@@ -260,9 +278,9 @@ function resolvePending() {
       game.stats.reso++;
       const bonus = Math.min(80, 30 + 10 * (game.combo - 1)) * s.temples.size;
       game.score += bonus;
-      const names = [...s.temples].map((i) => TEMPLE_DEFS[i].name).join('・');
-      const title = s.temples.size >= 2 ? '大共鳴' : '共鳴';
-      popup(`${title}！ ${game.combo}連`, `${names}と響き合う　+${bonus}`, 'reso');
+      const names = [...s.temples].map((i) => templeName(i)).join(tr('joiner'));
+      const title = s.temples.size >= 2 ? tr('resoBig') : tr('reso');
+      popup(tr('resoPop', title, game.combo), tr('resoSub', names, bonus), 'reso');
       audio.chime(game.combo);
     } else if (game.combo > 0) {
       game.combo = 0;
@@ -293,7 +311,7 @@ function pressEnd() {
 
 window.addEventListener('pointerdown', (e) => {
   if (e.target.closest('button, .overlay:not(.hidden) .panel')) return;
-  if (game.state === 'title' && !$('title').classList.contains('hidden')) return;
+  if (game.state === 'title') return;
   pressStart();
 });
 window.addEventListener('pointerup', pressEnd);
@@ -303,7 +321,7 @@ window.addEventListener('keydown', (e) => {
   if (e.target.closest && e.target.closest('button')) return;
   e.preventDefault();
   if (e.repeat) return;
-  if (game.state === 'title' && !$('title').classList.contains('hidden')) return;
+  if (game.state === 'title') return;
   pressStart();
 });
 window.addEventListener('keyup', (e) => {
@@ -341,8 +359,7 @@ function showTitle() {
   $('hud').classList.add('hidden');
   world.dawn = 0;
   updateActiveTemples(false);
-  const b108 = loadBest(108), b12 = loadBest(12);
-  $('best').textContent = b108 || b12 ? `最高得点　百八打: ${b108}　十二打: ${b12}` : '';
+  applyLang();
 }
 
 function startGame(total) {
@@ -353,7 +370,7 @@ function startGame(total) {
   game.combo = 0;
   game.maxCombo = 0;
   game.stats = { great: 0, good: 0, ok: 0, bad: 0, reso: 0 };
-  game.words = shuffle(BONNOU).slice(0, total);
+  game.words = shuffle(BONNOU.map((_, i) => i)).slice(0, total);
   game.lastStrikeT = -99;
   game.lastPower = 0;
   game.pending = [];
@@ -370,11 +387,12 @@ function startGame(total) {
 }
 
 function rankFor(avg) {
-  if (avg >= 115) return ['解脱', '鐘の声に、迷いはひとつも残っていない。'];
-  if (avg >= 95) return ['悟りの境地', '遠くの寺と心を通わせ、見事に年を越した。'];
-  if (avg >= 75) return ['心清らか', '澄んだ響きで新しい年を迎えた。'];
-  if (avg >= 55) return ['修行中', 'まだ少し煩悩が残っている。来年もまた。'];
-  return ['煩悩まみれ', '焦らず、余韻に耳を澄ませてみよう。'];
+  const r = tr('ranks');
+  if (avg >= 115) return r[0];
+  if (avg >= 95) return r[1];
+  if (avg >= 75) return r[2];
+  if (avg >= 55) return r[3];
+  return r[4];
 }
 
 function showResult() {
@@ -384,7 +402,7 @@ function showResult() {
   const prev = loadBest(game.total);
   const isBest = game.score > prev;
   if (isBest) saveBest(game.score);
-  $('resYear').textContent = `${newYear()}年`;
+  $('resYear').textContent = tr('year', newYear());
   $('resRank').textContent = rank;
   $('resScore').textContent = game.score;
   $('resGreat').textContent = game.stats.great;
@@ -394,15 +412,26 @@ function showResult() {
   $('resReso').textContent = game.stats.reso;
   $('resMaxCombo').textContent = game.maxCombo;
   $('resMsg').textContent = msg;
-  $('resBest').textContent = isBest ? '最高得点を更新しました' : `最高得点 ${prev}`;
+  $('resBest').textContent = isBest ? tr('newBest') : tr('best', prev);
   $('result').classList.remove('hidden');
   $('hud').classList.add('hidden');
 }
 
-document.querySelectorAll('[data-mode]').forEach((b) => {
-  b.addEventListener('click', () => startGame(Number(b.dataset.mode)));
+$('start').addEventListener('click', () => startGame(108));
+document.querySelectorAll('[data-lang-toggle]').forEach((b) => {
+  b.addEventListener('click', () => { setLang(getLang() === 'ja' ? 'en' : 'ja'); applyLang(); });
 });
-$('retry').addEventListener('click', () => startGame(game.total));
+$('howtoStart').addEventListener('click', () => { $('howto').classList.add('hidden'); startGame(108); });
+$('openHowto').addEventListener('click', () => {
+  $('title').classList.add('hidden');
+  $('howto').classList.remove('hidden');
+  $('howto').scrollTop = 0;
+});
+$('closeHowto').addEventListener('click', () => {
+  $('howto').classList.add('hidden');
+  $('title').classList.remove('hidden');
+});
+$('retry').addEventListener('click', () => startGame(108));
 $('toTitle').addEventListener('click', showTitle);
 $('mute').addEventListener('click', () => {
   audio.setMuted(!audio.muted);
@@ -433,7 +462,7 @@ function frame(now) {
     game.countdownT += dt;
     if (game.countdownT >= 5) {
       game.state = 'final';
-      banner('年が明けました', '最後の一打を');
+      banner(tr('dawn'), tr('dawnSub'));
       setBonnou();
       setTimeout(() => { if (game.state === 'final') hideBanner(); }, 3000);
     }
@@ -463,6 +492,7 @@ function frame(now) {
 
 // ---- 起動 ----
 try {
+  applyStatic();
   world = new World($('scene'));
   window.__joya = { world, game };
   $('loading').classList.add('hidden');
@@ -470,5 +500,5 @@ try {
   requestAnimationFrame(frame);
 } catch (err) {
   console.error(err);
-  $('loading').querySelector('.loading-text').textContent = 'WebGL を利用できないため表示できません。';
+  $('loading').querySelector('.loading-text').textContent = tr('noWebgl');
 }
