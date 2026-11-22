@@ -250,3 +250,43 @@ export function needleTexture(seed = 32) {
   }
   return toTex(c, { repeat: [2, 2] });
 }
+
+// 松葉の房（透過付き・灰色）：中心から針葉が放射状に伸びる。色は頂点カラーで付ける
+export function needleTuftTexture(seed = 33) {
+  const rnd = rand(seed);
+  const S = 256;
+  const [c, ctx] = canvas(S, S);
+  ctx.clearRect(0, 0, S, S);
+  ctx.lineCap = 'round';
+  // 枝先から扇状に伸びる房（全方向のウニ形にしない）
+  const ox = S / 2, oy = S * 0.78;
+  for (let i = 0; i < 150; i++) {
+    const a = -Math.PI / 2 + (rnd() - 0.5) * 2.6 * (0.6 + rnd() * 0.4);
+    const len = S * (0.3 + rnd() * 0.38) * (1 - Math.abs(a + Math.PI / 2) * 0.18);
+    const bend = (rnd() - 0.5) * 0.4;
+    const sx = ox + (rnd() - 0.5) * 30, sy = oy + rnd() * 20; // 小枝に沿って根元を散らす
+    const x0 = sx, y0 = sy;
+    const xm = sx + Math.cos(a + bend * 0.5) * len * 0.55, ym = sy + Math.sin(a + bend * 0.5) * len * 0.55;
+    const x1 = sx + Math.cos(a + bend) * len, y1 = sy + Math.sin(a + bend) * len;
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    // 色は頂点カラーで付けるので、ここでは明暗だけ（灰色）
+    const l = 55 + rnd() * 30;
+    g.addColorStop(0, `hsl(0, 0%, ${l * 0.55}%)`);
+    g.addColorStop(1, `hsl(0, 0%, ${Math.min(100, l + 12)}%)`);
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 1.6 + rnd() * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.quadraticCurveTo(xm, ym, x1, y1);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#4a3020';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(ox - 18, oy + 22);
+  ctx.lineTo(ox + 14, oy - 6);
+  ctx.stroke();
+  const t = toTex(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}

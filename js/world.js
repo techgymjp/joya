@@ -423,10 +423,10 @@ export class World {
   // 境内の松（雪吊り・こも巻き付き）
   makePines() {
     const defs = [
-      { x: -11.5, z: 3.0, height: 2.6, spread: 1.6, lean: 1.4, seed: 3, yukitsuri: true },
-      { x: 6.9, z: -3.6, height: 4.8, spread: 1.6, lean: 1.5, seed: 8, yukitsuri: true },
-      { x: 2.6, z: -6.6, height: 4.0, spread: 1.4, lean: 1.2, seed: 13, yukitsuri: true },
-      { x: 5.9, z: 4.4, height: 3.0, spread: 1.6, lean: 1.3, seed: 21, yukitsuri: true },
+      { x: -11.5, z: 3.0, height: 2.6, spread: 1.7, lean: 1.4, seed: 3, yukitsuri: true, snowStyle: 'heavy' },
+      { x: 6.9, z: -3.6, height: 3.4, spread: 2.4, lean: 1.2, seed: 8, yukitsuri: true, snowStyle: 'light', longBranch: true },
+      { x: 2.6, z: -6.6, height: 4.0, spread: 1.4, lean: 1.2, seed: 13, yukitsuri: true, snowStyle: 'heavy' },
+      { x: 5.9, z: 4.4, height: 2.6, spread: 2.0, lean: 1.3, seed: 21, yukitsuri: true, snowStyle: 'light' },
     ];
     for (const d of defs) {
       const p = makePine({ ...d, snowMat: this.mats.snow });
@@ -455,7 +455,7 @@ export class World {
       this.scene.add(g);
       // 寺の松
       for (const [px, pz, h, sd] of [[5.2, -3.2, 4.6, 31 + i], [-6.2, -3.0, 3.8, 41 + i]]) {
-        const pine = makePine({ height: h, spread: 1.4, lean: 0.7, seed: sd, snowMat: this.mats.snow });
+        const pine = makePine({ height: h, spread: 1.4, lean: 0.9, seed: sd, snowMat: this.mats.snow, density: 0.5, snowStyle: sd % 2 ? 'heavy' : 'light' });
         pine.position.set(px, 0, pz);
         g.add(pine);
       }
