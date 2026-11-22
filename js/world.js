@@ -33,9 +33,9 @@ const fromCam = (deg, d) => [CAM.x + Math.sin(deg * Math.PI / 180) * d, CAM.z - 
 
 // 遠くの寺の配置（視点から見た方角・距離・丘の高さ）
 export const TEMPLE_DEFS = [
-  { name: '西の寺', pos: fromCam(-1.5, 62), hill: 7, period: 8.6, pitch: 1.22, pan: -0.6, vol: 0.45, join: 0 },
-  { name: '北の寺', pos: fromCam(6.5, 115), hill: 17, period: 11.2, pitch: 1.05, pan: -0.15, vol: 0.38, join: 2 },
-  { name: '東の寺', pos: fromCam(14, 82), hill: 11, period: 9.7, pitch: 1.4, pan: 0.2, vol: 0.42, join: 1 },
+  { name: '西の寺', pos: fromCam(-3, 62), hill: 7, period: 8.6, pitch: 1.22, pan: -0.6, vol: 0.45, join: 0 },
+  { name: '北の寺', pos: fromCam(2.5, 115), hill: 17, period: 11.2, pitch: 1.05, pan: -0.15, vol: 0.38, join: 2 },
+  { name: '東の寺', pos: fromCam(8, 82), hill: 11, period: 9.7, pitch: 1.4, pan: 0.2, vol: 0.42, join: 1 },
 ];
 
 export function groundHeight(x, z) {
@@ -526,11 +526,12 @@ export class World {
     this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     const portrait = w / h < 1;
-    this.camera.fov = portrait ? 62 : 42;
+    this.camera.fov = portrait ? 70 : 42;
     this.camera.updateProjectionMatrix();
     if (portrait) {
-      this.camBase.set(CAM.x - 1, 2.6, CAM.z + 2);
-      this.camTarget.set(0.4, 4.3, -1.5);
+      // 縦長：鐘楼の階段の手前から鐘を見上げる。鐘の左奥に遠くの寺が見える
+      this.camBase.set(-1.29, 1.2, 4.83);
+      this.camTarget.set(-0.59, 3.68, -5.15);
     } else {
       this.camBase.set(CAM.x, 2.4, CAM.z);
       this.camTarget.set(-1.7, 2.9, -1.6);

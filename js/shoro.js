@@ -393,7 +393,7 @@ export function makeShoro(mats, { detail = true, monk = false } = {}) {
   // 鐘を吊る大梁
   beam(PX * 2 + 0.4, 'x', 0, TOP + 0.05, 0, 0.36, 0.3);
   // 貫（中段・腰）
-  for (const sz of [-1, 1]) beam(PX * 2, 'x', 0, 3.3, sz * PZ, 0.18, 0.12);
+  // 前後の中段の貫は設けない（奥の景色・遠くの寺が見通せるように）
   for (const sx of [-1, 1]) beam(PZ * 2, 'z', sx * PX, 3.3, 0, 0.18, 0.12);
   for (const sz of [-1, 1]) beam(PX * 2, 'x', 0, 1.15, sz * PZ, 0.16, 0.12);
   beam(PZ * 2, 'z', PX, 1.15, 0, 0.16, 0.12);

@@ -19,6 +19,9 @@ const PARTIALS = [
 // 打った瞬間だけ鳴る高い金属音（すぐ消える）
 const CLANG = [[9.1, 0.12, 0.5], [11.7, 0.08, 0.35], [14.3, 0.05, 0.25], [17.9, 0.03, 0.18]];
 
+// 全体の音量
+const MASTER = 2.6;
+
 export class BellAudio {
   constructor() {
     this.ctx = null;
@@ -35,10 +38,14 @@ export class BellAudio {
     const ctx = new AC();
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = 0.8;
+    this.master.gain.value = MASTER;
+    // 全体を大きくしても割れないよう、最後に強めのコンプレッサー（リミッター代わり）
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14;
-    comp.ratio.value = 4;
+    comp.threshold.value = -12;
+    comp.knee.value = 6;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.3;
     this.master.connect(comp).connect(ctx.destination);
 
     // 残響（合成インパルス応答）
@@ -343,6 +350,6 @@ export class BellAudio {
 
   setMuted(m) {
     this.muted = m;
-    if (this.master) this.master.gain.value = m ? 0 : 0.8;
+    if (this.master) this.master.gain.value = m ? 0 : MASTER;
   }
 }
