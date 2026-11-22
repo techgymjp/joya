@@ -347,7 +347,9 @@ function makeMonk(mats, S = 1.3) {
   return { group, parts: arms.flatMap(({ a, h }) => [a, h]), update };
 }
 
-export function makeShoro(mats, { detail = true, monk = false } = {}) {
+export function makeShoro(mats, { detail = true, monk = false, bellScale = 1 } = {}) {
+  const BS = bellScale; // 鐘の大きさ（撞木も少し大きくする）
+  const LS = 1 + (BS - 1) * 0.6;
   const root = new THREE.Group();
   const PX = 2.2, PZ = 1.7;
   const PLAT = 0.5, TOP = 4.35;
@@ -418,15 +420,17 @@ export function makeShoro(mats, { detail = true, monk = false } = {}) {
 
   // 鐘（ピボット = 吊り金具の上端）
   const HOOK_Y = TOP - 0.13;
-  const BELL_BASE = 1.6;
+  const CHAIN = Math.max(0.35, 0.89 - (BS - 1) * 1.73);
+  const BELL_BASE = HOOK_Y - CHAIN - 1.73 * BS;
   const bellPivot = new THREE.Group();
   bellPivot.position.set(0, HOOK_Y, 0);
   root.add(bellPivot);
   const bell = makeBell(mats, { detail });
   bell.position.y = BELL_BASE - HOOK_Y;
+  bell.scale.setScalar(BS);
   bellPivot.add(bell);
   // 吊り金具（鎖）
-  const chainTop = HOOK_Y, chainBot = BELL_BASE + 1.62 + 0.1;
+  const chainTop = HOOK_Y, chainBot = BELL_BASE + (1.62 + 0.1) * BS;
   const nLinks = detail ? 5 : 2;
   for (let i = 0; i < nLinks; i++) {
     const t = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.015, 6, 12), mats.iron);
@@ -437,13 +441,13 @@ export function makeShoro(mats, { detail = true, monk = false } = {}) {
   }
 
   // 撞木
-  const strikeWorldY = BELL_BASE + STRIKE_Y;
-  const strikeX = -(outerR(STRIKE_Y) + 0.035);
-  const LOG_LEN = 1.6, LOG_R = 0.11;
+  const strikeWorldY = BELL_BASE + STRIKE_Y * BS;
+  const strikeX = -(outerR(STRIKE_Y) * BS + 0.035);
+  const LOG_LEN = 1.6 * LS, LOG_R = 0.11 * LS;
   const ROPE_TOP = TOP - 0.1;
   const ROPE_L = ROPE_TOP - strikeWorldY;
   const logRestX = strikeX - LOG_LEN / 2;
-  const attach = [-0.45, 0.45];
+  const attach = [-0.45 * LS, 0.45 * LS];
   const log = new THREE.Group();
   const logMesh = new THREE.Mesh(new THREE.CylinderGeometry(LOG_R, LOG_R, LOG_LEN, 18), mats.logWood);
   logMesh.rotation.z = Math.PI / 2;
@@ -452,7 +456,7 @@ export function makeShoro(mats, { detail = true, monk = false } = {}) {
   for (const sx of [-1, 1]) {
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(LOG_R + 0.01, LOG_R + 0.01, 0.06, 18), mats.iron);
     cap.rotation.z = Math.PI / 2;
-    cap.position.x = sx * (LOG_LEN / 2 - 0.12);
+    cap.position.x = sx * (LOG_LEN / 2 - 0.12 * LS);
     log.add(cap);
   }
   root.add(log);
@@ -510,9 +514,9 @@ export function makeShoro(mats, { detail = true, monk = false } = {}) {
   mergeStatic(root, [bellPivot, log, ...ropes, pullRope, monkFig && monkFig.group, ...(monkFig ? monkFig.parts : [])]);
 
   return {
-    root, bellPivot, bell, log, setLogAngle, monk: monkFig,
+    root, bellPivot, bell, log, logMesh, setLogAngle, monk: monkFig,
     strikePoint: new THREE.Vector3(strikeX, strikeWorldY, 0),
-    bellCenter: new THREE.Vector3(0, BELL_BASE + 0.8, 0),
+    bellCenter: new THREE.Vector3(0, BELL_BASE + 0.8 * BS, 0),
     ropeLength: ROPE_L,
   };
 }
@@ -550,4 +554,27 @@ export function mergeStatic(root, keep = []) {
     m.receiveShadow = e.recv;
     root.add(m);
   }
+}
+
+// 光の輪郭（遠くからでも形が分かるように）。法線方向に少し膨らませた裏面を加算合成で光らせる
+const outlineMats = new Map();
+export function outlineMaterial(color = 0xffd08a, thick = 0.05, opacity = 0.85) {
+  const key = `${color}-${thick}-${opacity}`;
+  if (!outlineMats.has(key)) {
+    outlineMats.set(key, new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(color) }, uThick: { value: thick }, uOpacity: { value: opacity } },
+      vertexShader: 'uniform float uThick; void main(){ vec3 p = position + normalize(normal) * uThick; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }',
+      fragmentShader: 'uniform vec3 uColor; uniform float uOpacity; void main(){ gl_FragColor = vec4(uColor * uOpacity, uOpacity); }',
+      side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    }));
+  }
+  return outlineMats.get(key);
+}
+// mesh の子として輪郭を付ける（mesh が動けば輪郭も一緒に動く）
+export function addOutline(mesh, mat) {
+  const o = new THREE.Mesh(mesh.geometry, mat);
+  o.renderOrder = 2;
+  o.raycast = () => {};
+  mesh.add(o);
+  return o;
 }

@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as TX from './textures.js';
-import { makeShoro, makeRoof, Shumoku, SWING, mergeStatic } from './shoro.js';
+import { makeShoro, makeRoof, Shumoku, SWING, mergeStatic, outlineMaterial, addOutline } from './shoro.js';
 import { Bonfire } from './fire.js';
 import { makePine, makePineForest } from './pine.js';
 import { Q } from './quality.js';
@@ -74,6 +74,7 @@ export const TEMPLE_DEFS = [
 
 // 木（位置・高さ・横幅の半分）がカメラから見て遠くの寺に重なるか（方角と高さの両方で判定）
 const TEMPLE_SCALE = 1.875;
+const MAIN_SCALE = 1.12; // 自分の鐘楼の大きさ
 export function occludesTemple(x, z, top, radius) {
   const dx = x - CAM.x, dz = z - CAM.z;
   const d = Math.hypot(dx, dz);
@@ -137,13 +138,17 @@ export class World {
     this.makeMountains();
 
     // 主役の鐘楼
-    this.shoro = makeShoro(this.mats, { detail: true });
+    // 自分の鐘楼：鐘を大きめにし、和尚が綱を引く
+    this.shoro = makeShoro(this.mats, { detail: true, monk: true, bellScale: 1.35 });
+    this.shoro.root.scale.setScalar(MAIN_SCALE);
+    this.shoro.strikePoint.multiplyScalar(MAIN_SCALE);
+    this.shoro.bellCenter.multiplyScalar(MAIN_SCALE);
     scene.add(this.shoro.root);
     this.shumoku = new Shumoku();
     this.bellSwing = { a: 0, v: 0, buzz: 0 };
 
     this.fires = [];
-    this.addFire(-4.7, 1.4, 1);
+    this.addFire(-6.2, -1.6, 1); // 和尚の背後から照らす
     this.addFire(4.6, 1.6, 1);
     this.addLanterns();
     this.makeHall();
@@ -506,6 +511,14 @@ export class World {
       const shoro = makeShoro(this.mats, { detail: false, monk: true });
       // ライトアップ：光源を増やさず、材質を暖かく発光させて夜でも浮かび上がらせる
       shoro.root.traverse((o) => { if (o.isMesh && o.material !== this.mats.snow) o.material = this.litMaterial(o.material); });
+      // 和尚・鐘・撞木に光の輪郭を付けて、遠くからでも形と動きが分かるようにする
+      const outlines = [];
+      const om = (thick) => outlineMaterial(0xffd590, thick, 0.9);
+      const monkMeshes = [];
+      shoro.monk.group.traverse((o) => { if (o.isMesh) monkMeshes.push(o); });
+      for (const m of [...monkMeshes, ...shoro.monk.parts]) outlines.push(addOutline(m, om(0.035)));
+      shoro.bell.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.parent === shoro.bell) outlines.push(addOutline(o, om(0.03))); });
+      outlines.push(addOutline(shoro.logMesh, om(0.035)));
       const g = new THREE.Group();
       g.add(shoro.root);
       // 撞木の振れが見えるよう、横向きにカメラへ向ける
@@ -549,7 +562,7 @@ export class World {
       halo.scale.set(9, 9, 1);
       g.add(halo);
       return {
-        ...def, group: g, shoro, halo, fire, fires: [fire, fire2], active: true,
+        ...def, group: g, shoro, halo, fire, fires: [fire, fire2], active: true, outlines,
         shumoku: new Shumoku(),
         bellSwing: { a: 0, v: 0 },
         worldBell: new THREE.Vector3(x, y + 4.5, z),
@@ -658,6 +671,7 @@ export class World {
     t.active = on;
     for (const f of t.fires) f.group.visible = on;
     t.halo.material.opacity = on ? 0.22 : 0;
+    for (const o of t.outlines) o.visible = on;
     if (t.shoro.monk) {
       t.shoro.monk.group.visible = on;
       for (const m of t.shoro.monk.parts) m.visible = on;
