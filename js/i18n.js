@@ -36,6 +36,12 @@ const STR = {
     resoBig: '大共鳴', resoPop: (title, c) => `${title}！ ${c}連`, resoSub: (names, b) => `${names}と響き合う　+${b}`, joiner: '・',
     best: (b) => `最高得点　${b}`, newBest: '最高得点を更新しました',
     dawn: '年が明けました', dawnSub: '最後の一打を',
+    pauseTitle: 'ひと休み', resume: '再開する', share: '結果をシェア', copied: '結果をコピーしました',
+    privacy: 'プライバシーポリシー', privacyUrl: 'https://techgym.jp/privacy-policy/', adSettings: '広告の設定',
+    redoBtn: (n) => `広告を見て、この一打をやり直す（あと${n}回）`, redoDone: 'やり直し', redoDoneSub: '途切れる前の一打に戻りました',
+    redoLabel: 'やり直し', redoCount: (n) => `${n}回`,
+    shareText: (score, rank, combo, redo) => `除夜の鐘で百八の煩悩を払いました。${score}点・位は「${rank}」、共鳴は最大${combo}連${redo ? `（やり直し${redo}回）` : ''}。`,
+    h1pApp: '<b>画面を長押し</b>して撞木を引き、<b>指を離す</b>と鐘にぶつかります。長く引くほど強く響きます（約1.4秒で最大）。',
     ranks: [
       ['解脱', '鐘の声に、迷いはひとつも残っていない。'],
       ['悟りの境地', '遠くの寺と心を通わせ、見事に年を越した。'],
@@ -80,6 +86,12 @@ const STR = {
     resoBig: 'Great Resonance', resoPop: (title, c) => `${title}! ×${c}`, resoSub: (names, b) => `In tune with the ${names}  +${b}`, joiner: ' & ',
     best: (b) => `Best score  ${b}`, newBest: 'New best score!',
     dawn: 'The new year has come', dawnSub: 'Ring the final bell',
+    pauseTitle: 'Paused', resume: 'Resume', share: 'Share result', copied: 'Result copied',
+    privacy: 'Privacy policy', privacyUrl: 'https://techgym.jp/privacy-policy-en/', adSettings: 'Ad settings',
+    redoBtn: (n) => `Watch an ad to redo this strike (${n} left)`, redoDone: 'Redo', redoDoneSub: 'Back to the strike before the combo broke',
+    redoLabel: 'Redos', redoCount: (n) => `${n}`,
+    shareText: (score, rank, combo, redo) => `I rang away 108 earthly desires in Joya no Kane: ${score} pts, rank "${rank}", best resonance ×${combo}${redo ? ` (${redo} redo${redo > 1 ? 's' : ''})` : ''}.`,
+    h1pApp: '<b>Touch and hold</b> the screen to pull back the wooden striker, and <b>let go</b> to swing it into the bell. The longer you pull, the louder it rings (full strength in about 1.4 s).',
     ranks: [
       ['Liberation', 'Not a single doubt remains in the voice of the bell.'],
       ['Enlightenment', 'In harmony with the distant temples, you saw the year out beautifully.'],
@@ -89,6 +101,10 @@ const STR = {
     ],
   },
 };
+
+// アプリ（Capacitor）で動いているか。アプリでは操作の説明をタッチ向けにする
+const cap = window.Capacitor;
+export const NATIVE = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
 
 const KEY = 'joya-lang';
 let lang = (() => {
@@ -110,7 +126,10 @@ export function applyStatic() {
   document.documentElement.lang = lang;
   document.title = t('pageTitle');
   document.querySelector('meta[name="description"]')?.setAttribute('content', t('pageDesc'));
-  document.querySelectorAll('[data-i18n]').forEach((el) => { el.innerHTML = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const k = el.dataset.i18n;
+    el.innerHTML = t(NATIVE && STR.ja[`${k}App`] ? `${k}App` : k);
+  });
   document.querySelectorAll('[data-i18n-aria]').forEach((el) => el.setAttribute('aria-label', t(el.dataset.i18nAria)));
   document.querySelectorAll('[data-i18n-num]').forEach((el) => { el.textContent = t('nums')[Number(el.dataset.i18nNum)]; });
 }

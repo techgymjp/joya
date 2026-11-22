@@ -1,0 +1,8 @@
+{
+  "appId": "jp.techgym.joya",
+  "appName": "除夜の鐘",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#05070f"
+  }
+}

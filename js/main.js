@@ -2,7 +2,11 @@
 import { World, TEMPLE_DEFS } from './world.js';
 import { BellAudio } from './audio.js';
 import { BONNOU, BONNOU_EN } from './bonnou.js';
-import { t as tr, getLang, setLang, applyStatic } from './i18n.js';
+import { t as tr, getLang, setLang, applyStatic, NATIVE } from './i18n.js';
+
+const Ads = window.Ads;
+const Plugins = (window.Capacitor && window.Capacitor.Plugins) || {};
+const REDO_MAX = 5; // 1 ゲームで使えるやり直しの回数
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,6 +30,9 @@ const game = {
   lastPower: 0,
   pending: [],     // 共鳴判定待ちの打撃
   countdownT: 0,
+  paused: false,
+  redoUsed: 0,
+  offer: null,     // やり直しの案内 { snap, at, until, count }
 };
 
 const input = { holding: false, pull: 0 };
@@ -155,6 +162,7 @@ function setBonnou() {
 
 function applyLang() {
   applyStatic();
+  $('privacyLink').href = tr('privacyUrl');
   if (game.state !== 'title') { setBonnou(); updateHud(); }
   const best = loadBest(108);
   $('best').textContent = best ? tr('best', best) : '';
@@ -204,6 +212,7 @@ function onPlayerStrike(power) {
   if (game.state !== 'play' && game.state !== 'final') return;
 
   const yoin = yoinNow();
+  const snap = snapshot();
   game.count++;
   updateActiveTemples(true);
   vanishBonnou();
@@ -230,7 +239,7 @@ function onPlayerStrike(power) {
   game.lastPower = power;
 
   // 共鳴判定（直前に鳴った遠くの鐘）
-  const rec = { t: time, temples: new Set(), resolved: false };
+  const rec = { t: time, temples: new Set(), resolved: false, snap, count: game.count };
   for (const t of temples) if (time - t.lastRing <= COMBO_WIN) rec.temples.add(t.idx);
   game.pending.push(rec);
 
@@ -271,6 +280,7 @@ function resolvePending() {
       audio.chime(game.combo);
     } else if (game.combo > 0) {
       game.combo = 0;
+      offerRedo(s);
     }
     updateHud();
   }
@@ -279,6 +289,7 @@ function resolvePending() {
 
 // ---- 入力 ----
 function canPull() {
+  if (game.paused || (game.offer && game.offer.shown)) return false;
   return (game.state === 'play' || game.state === 'final' || game.state === 'title') && world.shumoku.ready;
 }
 
@@ -345,8 +356,11 @@ function showTitle() {
   $('result').classList.add('hidden');
   $('hud').classList.add('hidden');
   world.dawn = 0;
+  game.paused = false;
+  $('pause').classList.add('hidden');
   updateActiveTemples(false);
   applyLang();
+  Ads.setBanner(true);
 }
 
 function startGame(total) {
@@ -361,7 +375,13 @@ function startGame(total) {
   game.lastStrikeT = -99;
   game.lastPower = 0;
   game.pending = [];
+  game.redoUsed = 0;
+  game.offer = null;
+  game.paused = false;
+  $('redo').classList.add('hidden');
+  $('pause').classList.add('hidden');
   game.state = 'play';
+  Ads.setBanner(false);
   world.dawn = 0;
   updateActiveTemples(false);
   $('title').classList.add('hidden');
@@ -400,15 +420,19 @@ function showResult() {
   $('resMaxCombo').textContent = game.maxCombo;
   $('resMsg').textContent = msg;
   $('resBest').textContent = isBest ? tr('newBest') : tr('best', prev);
+  $('resRedo').textContent = tr('redoCount', game.redoUsed);
+  $('resRedoRow').classList.toggle('hidden', game.redoUsed === 0);
+  game.lastResult = { score: game.score, rank, combo: game.maxCombo, redo: game.redoUsed };
   $('result').classList.remove('hidden');
   $('hud').classList.add('hidden');
+  Ads.setBanner(true);
 }
 
 // 音はブラウザの決まりで最初の操作まで準備できないので、タイトルで最初に触れた時点で準備する
 window.addEventListener('pointerdown', () => audio.init(), { once: true });
 // スマホ：全画面にして横向きに固定（対応端末のみ。iPhone などは案内表示で横向きにしてもらう）
 async function goLandscape() {
-  if (!matchMedia('(pointer: coarse)').matches) return;
+  if (NATIVE || !matchMedia('(pointer: coarse)').matches) return;
   try {
     if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
     if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
@@ -417,6 +441,8 @@ async function goLandscape() {
 async function beginWhenReady() {
   goLandscape();
   audio.init();
+  Ads.setBanner(false);
+  await Ads.showInterstitial(); // プレイ開始のたびに全画面広告
   await audio.ready();
   startGame(108);
 }
@@ -430,12 +456,37 @@ $('openHowto').addEventListener('click', () => {
   $('howto').classList.remove('hidden');
   $('howto').scrollTop = 0;
 });
-$('closeHowto').addEventListener('click', () => {
+async function closeHowto() {
+  await Ads.showInterstitial(); // タイトルへ戻るたびに全画面広告
   $('howto').classList.add('hidden');
   $('title').classList.remove('hidden');
+}
+$('closeHowto').addEventListener('click', closeHowto);
+$('retry').addEventListener('click', async () => {
+  Ads.setBanner(false);
+  await Ads.showInterstitial(); // もう一度プレイするたびに全画面広告
+  startGame(108);
 });
-$('retry').addEventListener('click', () => startGame(108));
-$('toTitle').addEventListener('click', showTitle);
+$('toTitle').addEventListener('click', async () => {
+  await Ads.showInterstitial();
+  showTitle();
+});
+$('share').addEventListener('click', shareResult);
+$('pauseBtn').addEventListener('click', pauseGame);
+$('resume').addEventListener('click', resumeGame);
+$('pauseToTitle').addEventListener('click', async () => {
+  await Ads.showInterstitial();
+  audio.resume();
+  showTitle();
+});
+$('redo').addEventListener('click', takeRedo);
+$('adSettings').addEventListener('click', () => Ads.showPrivacyOptions());
+Ads.onReady(() => $('adSettings').classList.toggle('hidden', !Ads.privacyOptionsRequired));
+// 広告の表示中は音を止める
+Ads.setAudioHooks({
+  suspend: () => audio.suspend(),
+  resume: () => { if (!game.paused && !document.hidden) audio.resume(); },
+});
 $('mute').addEventListener('click', () => {
   audio.setMuted(!audio.muted);
   $('mute').classList.toggle('off', audio.muted);
@@ -444,9 +495,11 @@ $('mute').addEventListener('click', () => {
 // ---- ループ ----
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // ポーズ中は時間を止める（景色の描画だけ続ける）
+  const dt = game.paused ? 0 : Math.min(0.05, (now - last) / 1000);
   last = now;
   time += dt;
+  updateRedoOffer();
 
   // 撞木を引く
   const sh = world.shumoku;
@@ -483,6 +536,112 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// ---- ポーズ（ボタン・戻るボタン・別アプリへの切り替え） ----
+function isPlaying() {
+  return game.state === 'play' || game.state === 'countdown' || game.state === 'final';
+}
+function pauseGame() {
+  if (!isPlaying() || game.paused) return;
+  game.paused = true;
+  input.holding = false;
+  if (world.shumoku.state === 'pull') world.shumoku.release(0.05);
+  $('pause').classList.remove('hidden');
+  audio.suspend();
+  Ads.setBanner(true);
+}
+async function resumeGame() {
+  if (!game.paused) return;
+  Ads.setBanner(false);
+  await Ads.showInterstitial(); // ポーズから再開するたびに全画面広告
+  $('pause').classList.add('hidden');
+  Ads.setBanner(false);
+  game.paused = false;
+  audio.resume();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    pauseGame();
+    audio.suspend();
+  } else if (!game.paused && !Ads.showing) {
+    audio.resume();
+  }
+});
+// Android の戻るボタン：プレイ中はポーズ、遊び方はタイトルへ、タイトルと結果ではアプリを終了
+if (Plugins.App) {
+  Plugins.App.addListener('backButton', () => {
+    if (Ads.showing) return;
+    if (!$('howto').classList.contains('hidden')) closeHowto();
+    else if (game.paused) resumeGame();
+    else if (isPlaying()) pauseGame();
+    else if (game.state === 'end' && $('result').classList.contains('hidden')) { /* 結果が出るまで待つ */ }
+    else Plugins.App.exitApp();
+  });
+}
+
+// ---- やり直し（リワード広告）：共鳴コンボが途切れた一打を、途切れる前に戻して撞き直す ----
+function snapshot() {
+  return {
+    count: game.count, score: game.score, combo: game.combo, maxCombo: game.maxCombo,
+    stats: { ...game.stats }, lastStrikeT: game.lastStrikeT, lastPower: game.lastPower,
+  };
+}
+function offerRedo(rec) {
+  if (!Ads.rewardAvailable || game.state !== 'play' || game.redoUsed >= REDO_MAX) return;
+  // 途切れた様子を見届けられるよう、少し待ってから案内し、数秒で自動的に消す
+  game.offer = { snap: rec.snap, count: rec.count, at: time + 2.2, until: time + 7.2, shown: false };
+}
+function updateRedoOffer() {
+  const o = game.offer;
+  const el = $('redo');
+  if (!o) return;
+  // 次の一打を撞いた、状態が変わった、時間切れ、のいずれかで取り下げる
+  if (game.count !== o.count || game.state !== 'play' || time > o.until) {
+    game.offer = null;
+    el.classList.add('hidden');
+    return;
+  }
+  if (!o.shown && time >= o.at && world.shumoku.ready && !input.holding) {
+    o.shown = true;
+    el.textContent = tr('redoBtn', REDO_MAX - game.redoUsed);
+    el.classList.remove('hidden');
+  }
+}
+async function takeRedo() {
+  const o = game.offer;
+  if (!o || !o.shown) return;
+  game.offer = null;
+  $('redo').classList.add('hidden');
+  game.paused = true; // 広告の間は時間を止める
+  const result = await Ads.showRewarded();
+  game.paused = false;
+  if (result !== 'rewarded') return; // 最後まで見たときだけ効く
+  const s = o.snap;
+  Object.assign(game, { count: s.count, score: s.score, combo: s.combo, maxCombo: s.maxCombo, stats: { ...s.stats }, lastStrikeT: s.lastStrikeT, lastPower: s.lastPower });
+  game.pending = [];
+  game.redoUsed++;
+  updateActiveTemples(false);
+  setBonnou();
+  updateHud();
+  popup(tr('redoDone'), tr('redoDoneSub'), 'reso');
+}
+
+// ---- シェア ----
+async function shareResult() {
+  const r = game.lastResult;
+  if (!r) return;
+  const text = tr('shareText', r.score, r.rank, r.combo, r.redo);
+  try {
+    if (Plugins.Share) {
+      await Plugins.Share.share({ title: tr('pageTitle'), text, dialogTitle: tr('share') });
+      return;
+    }
+    const url = location.origin + location.pathname; // @web-only
+    if (navigator.share) { await navigator.share({ title: tr('pageTitle'), text, url }); return; } // @web-only
+    await navigator.clipboard.writeText(`${text} ${url}`); // @web-only
+    popup(tr('copied'));
+  } catch { /* 共有を取りやめた */ }
+}
+
 // ---- 起動：すべて読み込んで試し描きを済ませてからタイトルを出す ----
 const setProgress = (v) => { $('loadFill').style.width = `${Math.round(v * 100)}%`; };
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -493,10 +652,11 @@ const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
     await nextFrame();
     await nextFrame();
     world = new World($('scene'));
-    window.__joya = { world, game };
+    window.__joya = { world, game }; // @web-only
     setProgress(0.3);
     await world.warmup(setProgress);
     setProgress(1);
+    $('version').textContent = window.APP_VERSION || '';
     showTitle();
     last = performance.now();
     requestAnimationFrame(frame);

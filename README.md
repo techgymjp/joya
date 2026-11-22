@@ -28,6 +28,31 @@
 | `js/bonnou.js` | 画面に出る煩悩の一覧（身近な迷い 108 個と英訳。教義上の百八煩悩とは別物） |
 | `js/i18n.js` | 日本語・英語の文言 |
 | `vendor/` | [three.js](https://threejs.org/) r170（MIT、`vendor/THREE_LICENSE`） |
+| `js/ads.js` | AdMob 広告（アプリのときだけ動く） |
+| `scripts/build-web.js` | Web 版・アプリ用のファイルを `www/` にまとめる |
+| `android/` | Android プロジェクト（Capacitor） |
+| `assets/` | アイコン・起動画面の元画像 |
+
+## Android アプリ
+
+パッケージ名 `jp.techgym.joya`。Web 版と同じファイルを [Capacitor](https://capacitorjs.com/) でアプリに同梱しています（オフラインで遊べます）。
+
+- 動作確認用 APK（テスト広告・デバッグ署名）：リリース画面 https://github.com/techgymjp/joya/releases/tag/android-latest
+- APK を直接ダウンロード：https://github.com/techgymjp/joya/releases/latest/download/joya.apk
+
+<img src="docs/apk-qr.png" width="200" alt="リリース画面の QR コード">
+
+- ビルドは GitHub Actions（`.github/workflows/android.yml`）。`main` へ push するたびに APK を作り、上のリリース画面の APK を差し替えます
+- GitHub Secrets（`ANDROID_KEYSTORE_BASE64` など 4 つ）を登録すると、Google Play 用の署名付き AAB（本番広告）も作られ、Actions の Artifact に上がります
+- 広告（AdMob）：バナーはタイトル・遊び方・ポーズ・結果の画面だけ。全画面広告はプレイ開始・タイトルへ戻る・再開・もう一度のたび。リワード広告は「共鳴コンボが途切れた一打をやり直す」（1 ゲーム 5 回まで）
+- 本番の AdMob アプリ ID は `android/app/src/main/res/values/strings.xml` の `admob_app_id`、広告ユニット ID は `js/ads.js` の `production` に入れる
+- ストアの掲載文の下書き：`docs/store/listing.md`
+
+```bash
+npm ci
+npm run android:sync   # www/ を作って Android プロジェクトへコピー
+npm run android:open   # Android Studio で開く
+```
 
 ## ローカルで動かす
 
@@ -42,3 +67,7 @@ python3 -m http.server 8000
 ## GitHub Pages
 
 リポジトリの Settings → Pages で、Source を「Deploy from a branch」、Branch を `main` / `(root)` にすると公開されます。
+
+## ライセンス
+
+著作権はテックジム株式会社に帰属します（All rights reserved）。許可なく複製・改変・再配布すること、Web サイトやアプリ（Google Play、App Store など）として公開・販売すること、名前・ロゴ・アイコン・画像を使うことを禁止します。テックジムの受講生が学習目的で複製・改変することは許可しますが、アプリストアでの公開・広告の掲載・販売などの商用利用は禁止し、著作権表示を残してください。詳しくは [LICENSE](LICENSE) をご覧ください。同梱の three.js は MIT ライセンスです（`vendor/THREE_LICENSE`）。

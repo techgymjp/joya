@@ -24,6 +24,7 @@
       <div class="hud-box left">
         <div class="count"><span class="label" data-i18n="countPre">第</span><span id="count">0</span><span class="label" data-i18n="countPost">打</span><span class="total">/ <span id="total">108</span></span></div>
         <div class="clock" id="clock">23:00</div>
+        <button id="pauseBtn" class="icon-btn" aria-label="pause">Ⅱ</button>
       </div>
       <div class="hud-box right">
         <div class="score-label" data-i18n="score">得点</div>
@@ -52,6 +53,7 @@
     </div>
     <div class="hint" id="hint" data-i18n="hint">長押しで撞木を引き、離して撞く</div>
     <div class="banner hidden" id="banner"></div>
+    <button id="redo" class="redo hidden"></button>
   </div>
 
   <!-- タイトル -->
@@ -65,6 +67,8 @@
       </div>
       <p class="best" id="best"></p>
       <p class="note" data-i18n="soundNote">音が出ます</p>
+      <p class="meta"><span id="version"></span> <a id="privacyLink" href="https://techgym.jp/privacy-policy/" target="_blank" rel="noopener" data-i18n="privacy">プライバシーポリシー</a></p>
+      <button class="lang-btn hidden" id="adSettings" data-i18n="adSettings">広告の設定</button>
       <button class="lang-btn" data-lang-toggle data-i18n="langBtn">English</button>
     </div>
   </div>
@@ -113,12 +117,25 @@
         <tr><th data-i18n="great">見事</th><td id="resGreat">0</td><th data-i18n="good">良し</th><td id="resGood">0</td></tr>
         <tr><th data-i18n="ok">やや弱い</th><td id="resOk">0</td><th data-i18n="bad">かすか</th><td id="resBad">0</td></tr>
         <tr><th data-i18n="reso">共鳴</th><td id="resReso">0</td><th data-i18n="maxCombo">最大コンボ</th><td id="resMaxCombo">0</td></tr>
+        <tr id="resRedoRow" class="hidden"><th data-i18n="redoLabel">やり直し</th><td id="resRedo">0</td><th></th><td></td></tr>
       </table>
       <p class="res-msg" id="resMsg"></p>
       <p class="best" id="resBest"></p>
       <div class="buttons">
         <button class="btn primary" id="retry" data-i18n="retry">もう一度</button>
+        <button class="btn" id="share" data-i18n="share">結果をシェア</button>
         <button class="btn" id="toTitle" data-i18n="toTitle">タイトルへ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ポーズ -->
+  <div id="pause" class="overlay hidden">
+    <div class="panel">
+      <h2 class="pause-title" data-i18n="pauseTitle">ひと休み</h2>
+      <div class="buttons">
+        <button class="btn primary" id="resume" data-i18n="resume">再開する</button>
+        <button class="btn" id="pauseToTitle" data-i18n="toTitle">タイトルへ</button>
       </div>
     </div>
   </div>
@@ -128,6 +145,9 @@
   <!-- 縦向きのスマホでは横向きを案内 -->
   <div id="rotate"><div class="rotate-box"><div class="phone"></div><p data-i18n="rotate">画面を横向きにしてお楽しみください</p></div></div>
 
+  <script src="js/build-info.js"></script>
+  <script src="js/ads-config.js"></script>
+  <script src="js/ads.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

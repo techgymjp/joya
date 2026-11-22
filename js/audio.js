@@ -189,7 +189,9 @@ export class BellAudio {
   async ready() {
     if (!this.ctx) return;
     if (this.ctx.state !== 'running') {
-      try { await this.ctx.resume(); } catch { /* 再開できない環境 */ }
+      // 広告のあとなど、操作の直後でないと再開できないことがあるので待ちすぎない（次の操作で再開される）
+      const resumed = this.ctx.resume().catch(() => {});
+      await Promise.race([resumed, new Promise((r) => setTimeout(r, 600))]);
     }
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -374,6 +376,14 @@ export class BellAudio {
       o.start(t + i * 0.06);
       o.stop(t + i * 0.06 + 2.6);
     }
+  }
+
+  // ポーズ・広告表示中・別アプリに切り替えたときに音を止める
+  suspend() {
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
+  }
+  resume() {
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
   }
 
   setMuted(m) {
