@@ -4,6 +4,7 @@
 //   ・近い周波数の対（縮退モード）がつくる「おーん、おーん」という深いうなり
 //   ・木の撞木による鈍い打撃音と、一瞬だけの金属音
 //   ・低い倍音ほど長く残る余韻（最大20秒以上）
+import { LOW } from './quality.js';
 
 // [周波数比, 振幅, 減衰秒, うなり幅Hz, うなりの深さ0..1]
 const PARTIALS = [
@@ -19,8 +20,8 @@ const PARTIALS = [
 // 打った瞬間だけ鳴る高い金属音（すぐ消える）
 const CLANG = [[9.1, 0.12, 0.5], [11.7, 0.08, 0.35], [14.3, 0.05, 0.25], [17.9, 0.03, 0.18]];
 
-// 全体の音量
-const MASTER = 1.6;
+// 全体の音量（スマホは鳴らない低音をカットする分、聞こえる帯域を大きくできる）
+const MASTER = LOW ? 2.6 : 2.1;
 
 export class BellAudio {
   constructor() {
@@ -35,7 +36,9 @@ export class BellAudio {
     }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    const ctx = new AC();
+    // スマホは音の計算に余裕を持たせる（描画が重いときの音切れ・ビリつきを防ぐ）
+    let ctx;
+    try { ctx = new AC(LOW ? { latencyHint: 'playback' } : undefined); } catch { ctx = new AC(); }
     this.ctx = ctx;
     this.master = ctx.createGain();
     this.master.gain.value = MASTER;
@@ -50,22 +53,23 @@ export class BellAudio {
     // スマホのスピーカーで鳴らない重低音はカット（震えて濁るのを防ぐ）
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.value = 70;
+    hp.frequency.value = LOW ? 140 : 70;
     hp.Q.value = 0.6;
     // 最後にピークだけを抑えるリミッター（重なっても割れない）
     const lim = ctx.createDynamicsCompressor();
-    lim.threshold.value = -4;
+    lim.threshold.value = -3;
     lim.knee.value = 0;
     lim.ratio.value = 20;
     lim.attack.value = 0.001;
     lim.release.value = 0.12;
     const out = ctx.createGain();
-    out.gain.value = 0.9;
+    out.gain.value = 1.0;
     this.master.connect(hp).connect(comp).connect(lim).connect(out).connect(ctx.destination);
 
     // 残響（合成インパルス応答）
     this.reverb = ctx.createConvolver();
-    this.reverb.buffer = this.impulse(5.5, 2.2);
+    // 残響（スマホは短くして計算を軽く）
+    this.reverb.buffer = LOW ? this.impulse(2.6, 2.6) : this.impulse(5.5, 2.2);
     this.reverbGain = ctx.createGain();
     this.reverbGain.gain.value = 0.5;
     this.reverb.connect(this.reverbGain).connect(this.master);
@@ -288,7 +292,8 @@ export class BellAudio {
     tail.connect(wetG).connect(this.reverb);
 
     let end = t;
-    for (const [ratio, amp, decay, beat, depth] of PARTIALS) {
+    // スマホは聞こえにくい高い倍音を省いて軽くする
+    for (const [ratio, amp, decay, beat, depth] of (LOW ? PARTIALS.slice(0, 6) : PARTIALS)) {
       const f = base * ratio * (1 + (Math.random() - 0.5) * 0.003);
       // 強く撞くほど高い倍音まで鳴る
       const bright = ratio > 3 ? 0.3 + 0.7 * power : 1;
@@ -314,7 +319,7 @@ export class BellAudio {
       }
     }
     // 金属の「ガン」
-    for (const [ratio, amp, decay] of CLANG) {
+    for (const [ratio, amp, decay] of (LOW ? CLANG.slice(0, 2) : CLANG)) {
       const o = ctx.createOscillator();
       o.type = 'sine';
       o.frequency.value = base * ratio * (1 + (Math.random() - 0.5) * 0.01);

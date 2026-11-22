@@ -72,6 +72,30 @@ export const TEMPLE_DEFS = [
   { name: '東の寺', ...templeAt(7.6, 130, 4.0), period: 9.7, pitch: 1.4, pan: 0.2, vol: 0.42, join: 1 },
 ];
 
+// 木（位置・高さ・横幅の半分）がカメラから見て遠くの寺に重なるか（方角と高さの両方で判定）
+const TEMPLE_SCALE = 1.875;
+export function occludesTemple(x, z, top, radius) {
+  const dx = x - CAM.x, dz = z - CAM.z;
+  const d = Math.hypot(dx, dz);
+  const az = Math.atan2(dx, -dz);
+  const topEl = Math.atan2(top - CAM.y, d);
+  for (const def of TEMPLE_DEFS) {
+    const [tx, tz] = def.pos;
+    const dT = Math.hypot(tx - CAM.x, tz - CAM.z);
+    if (dT <= d + 2) continue; // 寺より奥の木は隠さない
+    const gy = groundHeight(tx, tz);
+    const baseEl = Math.atan2(gy - CAM.y, dT);
+    if (topEl < baseEl) continue; // 木のてっぺんが寺の土台より下に見えるなら隠さない
+    const azT = Math.atan2(tx - CAM.x, -(tz - CAM.z));
+    let da = Math.abs(az - azT);
+    if (da > Math.PI) da = 2 * Math.PI - da;
+    if (da < Math.atan2(7.7, dT) + Math.atan2(radius, d)) return true; // 寺の横幅の半分 約7.7m
+  }
+  return false;
+}
+// 画面の右方向（カメラから見て）
+const RIGHT = (() => { const a = FWD_DEG * Math.PI / 180; return [Math.cos(a), Math.sin(a)]; })();
+
 export function groundHeight(x, z) {
   let h = baseHeight(x, z);
   for (const d of TEMPLE_DEFS) {
@@ -86,7 +110,7 @@ export class World {
     this.canvas = canvas;
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: Q.antialias, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Q.pixelRatio);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = Q.shadows;
     renderer.shadowMap.type = Q.softShadow ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     // 軽量モードでは影を毎フレーム計算しない（景色はほとんど動かない）
     renderer.shadowMap.autoUpdate = Q.bloom;
@@ -261,9 +285,11 @@ export class World {
     this.scene.add(moon, moon.target);
     this.moonLight = moon;
     // 鐘楼内部を照らす吊り提灯の灯り
-    const inner = new THREE.PointLight(0xffb070, 3.5, 7, 1.5);
-    inner.position.set(-1.2, 3.6, 1.2);
-    this.scene.add(inner);
+    if (Q.extraLights) {
+      const inner = new THREE.PointLight(0xffb070, 3.5, 7, 1.5);
+      inner.position.set(-1.2, 3.6, 1.2);
+      this.scene.add(inner);
+    }
   }
 
   makeGround() {
@@ -397,9 +423,11 @@ export class World {
     hall.add(porchFloor);
     const roof = makeRoof(this.mats, { ax: 8.4, az: 6.6, rh: 3.8, yE: 5.6, yR: 9.6, up: 0.55, nu: 28, nv: 14 });
     hall.add(roof);
-    const pl = new THREE.PointLight(0xffa860, 6, 16, 1.4);
-    pl.position.set(0, 2.5, 6.5);
-    hall.add(pl);
+    if (Q.extraLights) {
+      const pl = new THREE.PointLight(0xffa860, 6, 16, 1.4);
+      pl.position.set(0, 2.5, 6.5);
+      hall.add(pl);
+    }
     mergeStatic(hall);
     hall.position.set(19, 0, -1);
     hall.rotation.y = Math.atan2(CAM.x - 19, CAM.z + 1) + 0.35;
@@ -412,6 +440,7 @@ export class World {
     const rnd = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
     const tryAdd = (x, z, s) => {
       if (Math.hypot(x, z) < 9) return;
+      if (occludesTemple(x, z, groundHeight(x, z) + 8.5 * s, 2.6 * s)) return; // 遠くの寺を隠す木は置かない
       if (Math.abs(x) < 3.5 && z > 4 && z < 30) return; // 参道
       if (Math.hypot(x - 19, z + 1) < 11) return; // 本堂
       // 手前左の視界を空ける
@@ -484,17 +513,26 @@ export class World {
       const dx = x - cam.x, dz = z - cam.z;
       g.rotation.y = Math.atan2(dx, dz) + Math.PI; // 和尚と篝火が手前に来る向き
       g.position.set(x, y - 0.1, z);
-      g.scale.setScalar(1.875); // 遠くでも見えるよう大きめ
+      g.scale.setScalar(TEMPLE_SCALE); // 遠くでも見えるよう大きめ
       // 地面の起伏に合わせた土台
       const fdn = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 5.5, 3, 16), this.mats.stone);
       fdn.position.y = -1.45;
       g.add(fdn);
       this.scene.add(g);
-      // 寺の松
+      // 寺の松。ほかの寺を隠すときは画面の右へずらす（ずらしても隠すなら置かない）
+      g.updateMatrixWorld(true);
       for (const [px, pz, h, sd] of [[5.2, -3.2, 4.6, 31 + i], [-6.2, -3.0, 3.8, 41 + i]]) {
-        const pine = makePine({ height: h, spread: 1.4, lean: 0.9, seed: sd, snowMat: this.mats.snow, density: Q.templePineDensity, lod: 'low', snowStyle: sd % 2 ? 'heavy' : 'light' });
-        pine.position.set(px, 0, pz);
-        g.add(pine);
+        const w0 = g.localToWorld(new THREE.Vector3(px, 0, pz));
+        let spot = null;
+        for (const k of [0, 5, 10, 15, 20, 26]) {
+          const wx = w0.x + RIGHT[0] * k, wz = w0.z + RIGHT[1] * k;
+          const top = groundHeight(wx, wz) + (h + 1.5) * TEMPLE_SCALE;
+          if (!occludesTemple(wx, wz, top, 1.4 * 1.3 * TEMPLE_SCALE)) { spot = new THREE.Vector3(wx, groundHeight(wx, wz), wz); break; }
+        }
+        if (!spot) continue;
+        const pine = makePine({ height: h * TEMPLE_SCALE, spread: 1.4 * TEMPLE_SCALE, lean: 0.9 * TEMPLE_SCALE, seed: sd, snowMat: this.mats.snow, density: Q.templePineDensity / 3.5, lod: 'low', snowStyle: sd % 2 ? 'heavy' : 'light' });
+        pine.position.copy(spot);
+        this.scene.add(pine);
       }
       // 篝火（遠くでも見える）
       const fire = new Bonfire(this.mats, { scale: 1.1, light: Q.extraLights, lightIntensity: 14 });
@@ -690,7 +728,7 @@ export class World {
     this.starMat.uniforms.uTime.value = time;
     this.skyMat.uniforms.uDawn.value += ((this.dawn || 0) - this.skyMat.uniforms.uDawn.value) * Math.min(1, dt * 0.5);
 
-    if (!Q.bloom) {
+    if (!Q.bloom && Q.shadows) {
       this._shadowT += dt;
       if (this._shadowT > 0.1) { this.renderer.shadowMap.needsUpdate = true; this._shadowT = 0; }
     }

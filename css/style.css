@@ -361,3 +361,16 @@ h1 {
   #result .res-msg { font-size: 13px; margin: 2px 0 0; }
   #result .best { font-size: 12px; margin: 2px 0 6px; }
 }
+
+/* やり直しの案内：鐘楼・遠くの寺・和尚に重ならない左下隅に小さく出す */
+.redo {
+  left: max(14px, env(safe-area-inset-left)); right: auto;
+  bottom: max(14px, env(safe-area-inset-bottom)); transform: none;
+  max-width: min(46vw, 420px); text-align: left;
+  font-size: 13px; padding: 9px 16px;
+  animation: redoInCorner 0.4s ease-out;
+}
+@keyframes redoInCorner { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (max-height: 500px) {
+  .redo { bottom: 10px; left: 10px; font-size: 12px; padding: 7px 13px; }
+}

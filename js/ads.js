@@ -14,9 +14,9 @@ window.Ads = (() => {
       },
       // 本番の広告ユニット（AdMob で作成後に入れる。空の種類は本番ビルドで出さない）
       production: {
-        interstitial: '',
-        rewarded: '',
-        banner: '',
+        interstitial: 'ca-app-pub-6411535997477460/7585930561',
+        rewarded: '', // リワード広告ユニットが届いたら入れる（空のあいだは本番ビルドで出さない）
+        banner: 'ca-app-pub-6411535997477460/8077931333',
       },
     },
   };

@@ -5,12 +5,12 @@ export const LOW = q === 'low' || (q !== 'high' && touch);
 
 export const Q = LOW
   ? {
-    pixelRatio: 1, antialias: false, bloom: false, shadowSize: 1024, softShadow: false,
-    forest: 70, forestDensity: 0.18, pineDensity: 0.55, templePineDensity: 0.3,
-    snow: 1500, fireCount: 0.45, groundSeg: 110, extraLights: false,
+    pixelRatio: 1, antialias: false, bloom: false, shadows: false, shadowSize: 1024, softShadow: false,
+    forest: 40, forestDensity: 0.16, pineDensity: 0.45, templePineDensity: 0.3,
+    snow: 800, fireCount: 0.4, groundSeg: 90, extraLights: false, fps: 30,
   }
   : {
-    pixelRatio: Math.min(window.devicePixelRatio || 1, 2), antialias: true, bloom: true, shadowSize: 2048, softShadow: true,
+    pixelRatio: Math.min(window.devicePixelRatio || 1, 2), antialias: true, bloom: true, shadows: true, shadowSize: 2048, softShadow: true,
     forest: 170, forestDensity: 0.28, pineDensity: 1, templePineDensity: 0.5,
-    snow: 5000, fireCount: 1, groundSeg: 220, extraLights: true,
+    snow: 5000, fireCount: 1, groundSeg: 220, extraLights: true, fps: 0,
   };

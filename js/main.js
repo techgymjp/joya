@@ -3,6 +3,7 @@ import { World, TEMPLE_DEFS } from './world.js';
 import { BellAudio } from './audio.js';
 import { BONNOU, BONNOU_EN } from './bonnou.js';
 import { t as tr, getLang, setLang, applyStatic, NATIVE } from './i18n.js';
+import { Q } from './quality.js';
 
 const Ads = window.Ads;
 const Plugins = (window.Capacitor && window.Capacitor.Plugins) || {};
@@ -495,6 +496,8 @@ $('mute').addEventListener('click', () => {
 // ---- ループ ----
 let last = performance.now();
 function frame(now) {
+  // スマホは秒 30 コマに抑える（毎フレームの負荷を下げ、音の計算に CPU を回す）
+  if (Q.fps && now - last < 1000 / Q.fps - 3) { requestAnimationFrame(frame); return; }
   // ポーズ中は時間を止める（景色の描画だけ続ける）
   const dt = game.paused ? 0 : Math.min(0.05, (now - last) / 1000);
   last = now;
