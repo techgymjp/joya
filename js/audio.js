@@ -84,7 +84,7 @@ export class BellAudio {
     const ctx = this.ctx;
     this.bgm = ctx.createGain();
     this.bgm.gain.setValueAtTime(0.0001, ctx.currentTime);
-    this.bgm.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 8);
+    this.bgm.gain.exponentialRampToValueAtTime(0.035, ctx.currentTime + 8); // 鐘の音が主役になるよう控えめに
     this.bgm.connect(this.master);
     // 残響への送りも BGM の音量つまみの後ろから取る
     this.bgmVerb = ctx.createGain();
@@ -230,11 +230,11 @@ export class BellAudio {
     lp.type = 'lowpass';
     lp.frequency.value = 380;
     const g = ctx.createGain();
-    g.gain.value = 0.015;
+    g.gain.value = 0.007;
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.09;
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.009;
+    lfoGain.gain.value = 0.004;
     lfo.connect(lfoGain).connect(g.gain);
     src.connect(lp).connect(g).connect(this.master);
     src.start();

@@ -555,26 +555,3 @@ export function mergeStatic(root, keep = []) {
     root.add(m);
   }
 }
-
-// 光の輪郭（遠くからでも形が分かるように）。法線方向に少し膨らませた裏面を加算合成で光らせる
-const outlineMats = new Map();
-export function outlineMaterial(color = 0xffd08a, thick = 0.05, opacity = 0.85) {
-  const key = `${color}-${thick}-${opacity}`;
-  if (!outlineMats.has(key)) {
-    outlineMats.set(key, new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: new THREE.Color(color) }, uThick: { value: thick }, uOpacity: { value: opacity } },
-      vertexShader: 'uniform float uThick; void main(){ vec3 p = position + normalize(normal) * uThick; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }',
-      fragmentShader: 'uniform vec3 uColor; uniform float uOpacity; void main(){ gl_FragColor = vec4(uColor * uOpacity, uOpacity); }',
-      side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    }));
-  }
-  return outlineMats.get(key);
-}
-// mesh の子として輪郭を付ける（mesh が動けば輪郭も一緒に動く）
-export function addOutline(mesh, mat) {
-  const o = new THREE.Mesh(mesh.geometry, mat);
-  o.renderOrder = 2;
-  o.raycast = () => {};
-  mesh.add(o);
-  return o;
-}

@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as TX from './textures.js';
-import { makeShoro, makeRoof, Shumoku, SWING, mergeStatic, outlineMaterial, addOutline } from './shoro.js';
+import { makeShoro, makeRoof, Shumoku, SWING, mergeStatic } from './shoro.js';
 import { Bonfire } from './fire.js';
 import { makePine, makePineForest } from './pine.js';
 import { Q } from './quality.js';
@@ -511,14 +511,14 @@ export class World {
       const shoro = makeShoro(this.mats, { detail: false, monk: true });
       // ライトアップ：光源を増やさず、材質を暖かく発光させて夜でも浮かび上がらせる
       shoro.root.traverse((o) => { if (o.isMesh && o.material !== this.mats.snow) o.material = this.litMaterial(o.material); });
-      // 和尚・鐘・撞木に光の輪郭を付けて、遠くからでも形と動きが分かるようにする
-      const outlines = [];
-      const om = (thick) => outlineMaterial(0xffd590, thick, 0.9);
+      // 和尚は常にライトアップ（鐘が鳴った瞬間くらいの明るさ）。光源は増やさず発光と背後の光で表す
       const monkMeshes = [];
       shoro.monk.group.traverse((o) => { if (o.isMesh) monkMeshes.push(o); });
-      for (const m of [...monkMeshes, ...shoro.monk.parts]) outlines.push(addOutline(m, om(0.035)));
-      shoro.bell.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.parent === shoro.bell) outlines.push(addOutline(o, om(0.03))); });
-      outlines.push(addOutline(shoro.logMesh, om(0.035)));
+      for (const m of [...monkMeshes, ...shoro.monk.parts]) m.material = this.monkMaterial(m.material);
+      const monkGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TX.glowTexture('255,205,140'), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.6, fog: false }));
+      monkGlow.position.set(0, 1.0, -0.2);
+      monkGlow.scale.set(3.2, 3.6, 1);
+      shoro.monk.group.add(monkGlow);
       const g = new THREE.Group();
       g.add(shoro.root);
       // 撞木の振れが見えるよう、横向きにカメラへ向ける
@@ -562,7 +562,7 @@ export class World {
       halo.scale.set(9, 9, 1);
       g.add(halo);
       return {
-        ...def, group: g, shoro, halo, fire, fires: [fire, fire2], active: true, outlines,
+        ...def, group: g, shoro, halo, fire, fires: [fire, fire2], active: true,
         shumoku: new Shumoku(),
         bellSwing: { a: 0, v: 0 },
         worldBell: new THREE.Vector3(x, y + 4.5, z),
@@ -664,6 +664,19 @@ export class World {
     return this._lit.get(m);
   }
 
+  // 遠くの寺の和尚用：常に明るく発光させる
+  monkMaterial(m) {
+    this._monkLit ||= new Map();
+    if (!this._monkLit.has(m)) {
+      const c = m.clone();
+      c.emissive = new THREE.Color(0xffc080);
+      c.emissiveIntensity = 0.65;
+      if (m.map) c.emissiveMap = m.map;
+      this._monkLit.set(m, c);
+    }
+    return this._monkLit.get(m);
+  }
+
   // 鐘をつき始めた寺だけ篝火を焚き、和尚を立たせる
   setTempleActive(i, on) {
     const t = this.temples[i];
@@ -671,7 +684,6 @@ export class World {
     t.active = on;
     for (const f of t.fires) f.group.visible = on;
     t.halo.material.opacity = on ? 0.22 : 0;
-    for (const o of t.outlines) o.visible = on;
     if (t.shoro.monk) {
       t.shoro.monk.group.visible = on;
       for (const m of t.shoro.monk.parts) m.visible = on;
