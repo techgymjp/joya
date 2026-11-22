@@ -72,7 +72,7 @@ function onTempleRing(t, power) {
   scheduleTemple(t, time);
   world.ringTemple(t.idx, power);
   // 距離に応じた遅れはごく僅かなので省略
-  audio.distantBell(power, t.def.pitch, t.def.pan);
+  audio.distantBell(power, t.def.pitch, t.def.pan, t.def.vol);
   const el = templeEls[t.idx];
   el.classList.remove('flash');
   void el.offsetWidth;

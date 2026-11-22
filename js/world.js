@@ -32,9 +32,9 @@ const fromCam = (deg, d) => [CAM.x + Math.sin(deg * Math.PI / 180) * d, CAM.z - 
 
 // 遠くの寺の配置（視点から見た方角・距離・丘の高さ）
 export const TEMPLE_DEFS = [
-  { name: '西の寺', pos: fromCam(-1.5, 62), hill: 7, period: 8.6, pitch: 0.82, pan: -0.6 },
-  { name: '北の寺', pos: fromCam(6.5, 115), hill: 17, period: 11.2, pitch: 0.7, pan: -0.15 },
-  { name: '東の寺', pos: fromCam(14, 82), hill: 11, period: 9.7, pitch: 0.92, pan: 0.2 },
+  { name: '西の寺', pos: fromCam(-1.5, 62), hill: 7, period: 8.6, pitch: 1.22, pan: -0.6, vol: 0.45 },
+  { name: '北の寺', pos: fromCam(6.5, 115), hill: 17, period: 11.2, pitch: 1.05, pan: -0.15, vol: 0.38 },
+  { name: '東の寺', pos: fromCam(14, 82), hill: 11, period: 9.7, pitch: 1.4, pan: 0.2, vol: 0.42 },
 ];
 
 export function groundHeight(x, z) {

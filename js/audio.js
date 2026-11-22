@@ -1,20 +1,23 @@
 // 梵鐘の音を Web Audio で合成する（録音素材なし）
-// 梵鐘らしさ = 低い基音 + 非整数倍の倍音 + 近い周波数どうしの「うなり」+ 長い余韻
+// 日本の梵鐘らしさ:
+//   ・低い基音と、教会の鐘とは違う非整数倍の倍音（短三度を持たない）
+//   ・近い周波数の対（縮退モード）がつくる「おーん、おーん」という深いうなり
+//   ・木の撞木による鈍い打撃音と、一瞬だけの金属音
+//   ・低い倍音ほど長く残る余韻（最大20秒以上）
 
-// [周波数比, 振幅, 減衰秒, うなり幅Hz]
+// [周波数比, 振幅, 減衰秒, うなり幅Hz, うなりの深さ0..1]
 const PARTIALS = [
-  [0.5, 0.55, 14, 0.35],  // ハム音
-  [1.0, 1.0, 10, 0.9],    // 基音
-  [1.19, 0.55, 7, 1.3],   // 短三度
-  [1.5, 0.32, 5.5, 1.1],
-  [2.0, 0.42, 4.5, 1.6],
-  [2.51, 0.25, 3.2, 2.0],
-  [2.66, 0.2, 2.8, 1.4],
-  [3.01, 0.16, 2.2, 2.4],
-  [4.07, 0.1, 1.4, 3.0],
-  [5.18, 0.07, 0.9, 3.5],
-  [6.4, 0.04, 0.6, 4.0],
+  [1.0, 0.65, 26, 0.45, 0.5],   // 基音（腹に響くうなり）
+  [2.06, 1.0, 20, 1.6, 0.85],   // 「ゴーン」の芯
+  [2.81, 0.85, 14, 2.3, 0.8],
+  [3.6, 0.55, 9, 1.2, 0.6],
+  [4.43, 0.42, 6.5, 2.8, 0.6],
+  [5.36, 0.3, 4.5, 3.4, 0.5],
+  [6.37, 0.2, 3.2, 2.2, 0.5],
+  [7.62, 0.12, 2.2, 4.0, 0.4],
 ];
+// 打った瞬間だけ鳴る高い金属音（すぐ消える）
+const CLANG = [[9.1, 0.12, 0.5], [11.7, 0.08, 0.35], [14.3, 0.05, 0.25], [17.9, 0.03, 0.18]];
 
 export class BellAudio {
   constructor() {
@@ -42,7 +45,7 @@ export class BellAudio {
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.impulse(5.5, 2.2);
     this.reverbGain = ctx.createGain();
-    this.reverbGain.gain.value = 0.45;
+    this.reverbGain.gain.value = 0.5;
     this.reverb.connect(this.reverbGain).connect(this.master);
 
     this.startWind();
@@ -78,11 +81,11 @@ export class BellAudio {
     lp.type = 'lowpass';
     lp.frequency.value = 380;
     const g = ctx.createGain();
-    g.gain.value = 0.05;
+    g.gain.value = 0.03;
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.09;
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.03;
+    lfoGain.gain.value = 0.018;
     lfo.connect(lfoGain).connect(g.gain);
     src.connect(lp).connect(g).connect(this.master);
     src.start();
@@ -108,21 +111,22 @@ export class BellAudio {
     src.stop(t + 0.1);
   }
 
-  // power: 0..1、opts: {pitch, gain, cutoff, pan, wet}
+  // power: 0..1、opts: {pitch, gain, cutoff, pan, wet, dry}
   bell(power, opts = {}) {
     if (!this.ctx || this.muted) return;
     const ctx = this.ctx;
-    const { pitch = 1, gain = 1, cutoff = 6000, pan = 0, wet = 0.5, dry = 1 } = opts;
+    const { pitch = 1, gain = 1, cutoff = 7000, pan = 0, wet = 0.35, dry = 1 } = opts;
     const t = ctx.currentTime + 0.01;
-    const base = 128 * pitch;
-    const vol = (0.12 + 0.88 * Math.pow(power, 1.1)) * gain;
-    const durMul = 0.55 + 0.6 * power;
+    const base = 78 * pitch;
+    const vol = (0.15 + 0.85 * Math.pow(power, 1.1)) * gain;
+    const durMul = 0.5 + 0.55 * power;
 
     const out = ctx.createGain();
-    out.gain.value = vol * 0.22;
+    out.gain.value = vol * 0.16;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = cutoff * (0.5 + 0.5 * power);
+    lp.frequency.value = cutoff * (0.55 + 0.45 * power);
+    lp.Q.value = 0.5;
     const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     out.connect(lp);
     let tail = lp;
@@ -135,53 +139,73 @@ export class BellAudio {
     tail.connect(wetG).connect(this.reverb);
 
     let end = t;
-    for (const [ratio, amp, decay, beat] of PARTIALS) {
-      const f = base * ratio * (1 + (Math.random() - 0.5) * 0.002);
-      // 強く撞くほど高い倍音が出る
-      const bright = ratio > 2 ? 0.35 + 0.65 * power : 1;
+    for (const [ratio, amp, decay, beat, depth] of PARTIALS) {
+      const f = base * ratio * (1 + (Math.random() - 0.5) * 0.003);
+      // 強く撞くほど高い倍音まで鳴る
+      const bright = ratio > 3 ? 0.3 + 0.7 * power : 1;
       const d = decay * durMul;
       end = Math.max(end, t + d);
-      for (const df of [-beat / 2, beat / 2]) {
+      // 低い倍音はやや遅れて膨らむ（「ゴッ…ォーーン」）
+      const attack = ratio < 2.5 ? 0.06 : 0.012;
+      const pair = [[-beat / 2, 1], [beat / 2, depth]];
+      for (const [df, w] of pair) {
         const o = ctx.createOscillator();
         o.type = 'sine';
         o.frequency.value = f + df;
         const g = ctx.createGain();
+        const peak = amp * bright * w * 0.6;
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.linearRampToValueAtTime(amp * bright * 0.5, t + 0.006);
+        g.gain.linearRampToValueAtTime(peak, t + attack);
+        // 最初の1秒で少し落ち、その後ゆっくり長く消える
+        g.gain.exponentialRampToValueAtTime(peak * 0.55, t + attack + 0.9);
         g.gain.exponentialRampToValueAtTime(0.0001, t + d);
         o.connect(g).connect(out);
         o.start(t);
         o.stop(t + d + 0.05);
       }
     }
-    // 撞木が当たる「ゴッ」
+    // 金属の「ガン」
+    for (const [ratio, amp, decay] of CLANG) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = base * ratio * (1 + (Math.random() - 0.5) * 0.01);
+      const g = ctx.createGain();
+      const peak = amp * (0.2 + 0.8 * power);
+      g.gain.setValueAtTime(peak, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + decay * (0.6 + 0.4 * power));
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + decay + 0.05);
+    }
+    // 木の撞木が当たる鈍い「ゴッ」
     const n = ctx.createBufferSource();
     n.buffer = this.thumpBuf || (this.thumpBuf = this.noiseBuffer(0.3));
     const nf = ctx.createBiquadFilter();
-    nf.type = 'lowpass';
-    nf.frequency.value = 500 + 700 * power;
+    nf.type = 'bandpass';
+    nf.frequency.value = 220 + 180 * power;
+    nf.Q.value = 0.8;
     const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.9 * vol, t);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    ng.gain.setValueAtTime(1.4 * (0.3 + 0.7 * power), t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
     n.connect(nf).connect(ng).connect(out);
     n.start(t);
     n.stop(t + 0.3);
     const thud = ctx.createOscillator();
-    thud.frequency.setValueAtTime(90, t);
-    thud.frequency.exponentialRampToValueAtTime(45, t + 0.15);
+    thud.frequency.setValueAtTime(base * 1.3, t);
+    thud.frequency.exponentialRampToValueAtTime(base * 0.7, t + 0.12);
     const tg = ctx.createGain();
-    tg.gain.setValueAtTime(1.2 * vol, t);
-    tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    tg.gain.setValueAtTime(0.9 * (0.3 + 0.7 * power), t);
+    tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
     thud.connect(tg).connect(out);
     thud.start(t);
-    thud.stop(t + 0.3);
+    thud.stop(t + 0.25);
 
     setTimeout(() => { try { out.disconnect(); } catch { /* 既に切断済み */ } }, (end - t + 1) * 1000);
   }
 
-  // 遠くの寺の鐘：こもった音、パン、残響多め
-  distantBell(power, pitch, pan, distanceGain = 0.22) {
-    this.bell(power, { pitch, gain: distanceGain, cutoff: 900, pan, wet: 1.2, dry: 0.5 });
+  // 遠くの寺の鐘：高音が少しこもり、残響多め。小さなスピーカーでも聞こえる音量にする
+  distantBell(power, pitch, pan, distanceGain = 0.55) {
+    this.bell(power, { pitch, gain: distanceGain, cutoff: 2600, pan, wet: 0.9, dry: 0.75 });
   }
 
   // 共鳴コンボ時の澄んだ響き
