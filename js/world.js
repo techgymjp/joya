@@ -5,9 +5,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as TX from './textures.js';
-import { makeShoro, makeRoof, Shumoku, SWING } from './shoro.js';
+import { makeShoro, makeRoof, Shumoku, SWING, mergeStatic } from './shoro.js';
 import { Bonfire } from './fire.js';
 import { makePine, makePineForest } from './pine.js';
+import { Q } from './quality.js';
 
 // ---- 地形 ----
 function hash(x, y) {
@@ -67,7 +68,7 @@ function templeAt(rel, d, el) {
 }
 export const TEMPLE_DEFS = [
   { name: '西の寺', ...templeAt(-9.5, 100, 2.6), period: 8.6, pitch: 1.22, pan: -0.6, vol: 0.45, join: 0 },
-  { name: '北の寺', ...templeAt(-3.5, 165, 6.0), period: 11.2, pitch: 1.05, pan: -0.15, vol: 0.38, join: 2 },
+  { name: '北の寺', ...templeAt(-3.5, 165, 4.6), period: 11.2, pitch: 1.05, pan: -0.15, vol: 0.38, join: 2 },
   { name: '東の寺', ...templeAt(7.6, 130, 4.0), period: 9.7, pitch: 1.4, pan: 0.2, vol: 0.42, join: 1 },
 ];
 
@@ -83,10 +84,13 @@ export function groundHeight(x, z) {
 export class World {
   constructor(canvas) {
     this.canvas = canvas;
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: Q.antialias, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Q.pixelRatio);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = Q.softShadow ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    // 軽量モードでは影を毎フレーム計算しない（景色はほとんど動かない）
+    renderer.shadowMap.autoUpdate = Q.bloom;
+    this._shadowT = 1;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     this.renderer = renderer;
@@ -128,8 +132,10 @@ export class World {
 
     this.composer = new EffectComposer(renderer);
     this.composer.addPass(new RenderPass(scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.6, 0.82);
-    this.composer.addPass(this.bloom);
+    if (Q.bloom) {
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.6, 0.82);
+      this.composer.addPass(this.bloom);
+    }
     this.composer.addPass(new OutputPass());
 
     this.resize();
@@ -247,7 +253,7 @@ export class World {
     moon.position.set(-12, 18, -8);
     moon.target.position.set(0, 1, 0);
     moon.castShadow = true;
-    moon.shadow.mapSize.set(2048, 2048);
+    moon.shadow.mapSize.set(Q.shadowSize, Q.shadowSize);
     const sc = moon.shadow.camera;
     sc.left = -12; sc.right = 12; sc.top = 12; sc.bottom = -12; sc.near = 1; sc.far = 60;
     moon.shadow.bias = -0.0004;
@@ -261,7 +267,7 @@ export class World {
   }
 
   makeGround() {
-    const size = 420, seg = 220;
+    const size = 420, seg = Q.groundSeg;
     const g = new THREE.PlaneGeometry(size, size, seg, seg);
     g.rotateX(-Math.PI / 2);
     const p = g.attributes.position;
@@ -352,10 +358,13 @@ export class World {
       const knob = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), stone);
       knob.position.y = 1.82;
       g.add(knob);
-      const pl = new THREE.PointLight(0xffa050, 1.2, 4, 1.8);
-      pl.position.y = 1.29;
-      g.add(pl);
+      if (Q.extraLights) {
+        const pl = new THREE.PointLight(0xffa050, 1.2, 4, 1.8);
+        pl.position.y = 1.29;
+        g.add(pl);
+      }
       g.position.set(x, 0, z);
+      mergeStatic(g);
       this.scene.add(g);
     }
   }
@@ -391,6 +400,7 @@ export class World {
     const pl = new THREE.PointLight(0xffa860, 6, 16, 1.4);
     pl.position.set(0, 2.5, 6.5);
     hall.add(pl);
+    mergeStatic(hall);
     hall.position.set(19, 0, -1);
     hall.rotation.y = Math.atan2(CAM.x - 19, CAM.z + 1) + 0.35;
     this.scene.add(hall);
@@ -419,7 +429,7 @@ export class World {
       }
       spots.push([x, z, s]);
     };
-    for (let i = 0; i < 1400 && spots.length < 170; i++) {
+    for (let i = 0; i < 1400 && spots.length < Q.forest; i++) {
       const a = rnd() * Math.PI * 2;
       const r = 10 + rnd() * 150;
       tryAdd(Math.cos(a) * r, Math.sin(a) * r - 6, 0.7 + rnd() * 0.8);
@@ -432,12 +442,12 @@ export class World {
     }
     // 背景の松：段作り・庭木の形を数種類作り、向きと大きさを変えて並べる
     const variants = [
-      { form: 'tiered', height: 6.5, spread: 2.0, lean: 0.9, seed: 101, snowStyle: 'light', density: 0.28 },
-      { form: 'tiered', height: 7.5, spread: 2.3, lean: 1.4, seed: 102, snowStyle: 'light', density: 0.28 },
-      { form: 'tiered', height: 5.5, spread: 1.9, lean: 0.6, seed: 103, snowStyle: 'heavy', density: 0.28 },
-      { form: 'tiered', height: 8.5, spread: 2.2, lean: 1.8, seed: 104, snowStyle: 'light', density: 0.25 },
-      { form: 'garden', height: 4.5, spread: 2.2, lean: 1.5, seed: 105, snowStyle: 'heavy', density: 0.3 },
-      { form: 'garden', height: 5.0, spread: 2.0, lean: 1.2, seed: 106, snowStyle: 'light', density: 0.3 },
+      { form: 'tiered', height: 6.5, spread: 2.0, lean: 0.9, seed: 101, snowStyle: 'light', density: Q.forestDensity },
+      { form: 'tiered', height: 7.5, spread: 2.3, lean: 1.4, seed: 102, snowStyle: 'light', density: Q.forestDensity },
+      { form: 'tiered', height: 5.5, spread: 1.9, lean: 0.6, seed: 103, snowStyle: 'heavy', density: Q.forestDensity },
+      { form: 'tiered', height: 8.5, spread: 2.2, lean: 1.8, seed: 104, snowStyle: 'light', density: Q.forestDensity },
+      { form: 'garden', height: 4.5, spread: 2.2, lean: 1.5, seed: 105, snowStyle: 'heavy', density: Q.forestDensity + 0.02 },
+      { form: 'garden', height: 5.0, spread: 2.0, lean: 1.2, seed: 106, snowStyle: 'light', density: Q.forestDensity + 0.02 },
     ];
     const placements = spots.map(([x, z, s], i) => ({
       v: i % variants.length, x, y: groundHeight(x, z) - 0.05, z, rot: x * 13.1 + z * 7.7, scale: s,
@@ -454,7 +464,7 @@ export class World {
       { x: 5.9, z: 4.4, height: 2.6, spread: 2.0, lean: 1.3, seed: 21, yukitsuri: true, snowStyle: 'light' },
     ];
     for (const d of defs) {
-      const p = makePine({ ...d, snowMat: this.mats.snow });
+      const p = makePine({ ...d, snowMat: this.mats.snow, density: Q.pineDensity, lod: Q.bloom ? 'high' : 'low' });
       p.position.set(d.x, groundHeight(d.x, d.z), d.z);
       this.scene.add(p);
     }
@@ -465,6 +475,8 @@ export class World {
       const [x, z] = def.pos;
       const y = groundHeight(x, z);
       const shoro = makeShoro(this.mats, { detail: false, monk: true });
+      // ライトアップ：光源を増やさず、材質を暖かく発光させて夜でも浮かび上がらせる
+      shoro.root.traverse((o) => { if (o.isMesh && o.material !== this.mats.snow) o.material = this.litMaterial(o.material); });
       const g = new THREE.Group();
       g.add(shoro.root);
       // 撞木の振れが見えるよう、横向きにカメラへ向ける
@@ -472,7 +484,7 @@ export class World {
       const dx = x - cam.x, dz = z - cam.z;
       g.rotation.y = Math.atan2(dx, dz) + Math.PI; // 和尚と篝火が手前に来る向き
       g.position.set(x, y - 0.1, z);
-      g.scale.setScalar(1.25);
+      g.scale.setScalar(1.875); // 遠くでも見えるよう大きめ
       // 地面の起伏に合わせた土台
       const fdn = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 5.5, 3, 16), this.mats.stone);
       fdn.position.y = -1.45;
@@ -480,12 +492,12 @@ export class World {
       this.scene.add(g);
       // 寺の松
       for (const [px, pz, h, sd] of [[5.2, -3.2, 4.6, 31 + i], [-6.2, -3.0, 3.8, 41 + i]]) {
-        const pine = makePine({ height: h, spread: 1.4, lean: 0.9, seed: sd, snowMat: this.mats.snow, density: 0.5, snowStyle: sd % 2 ? 'heavy' : 'light' });
+        const pine = makePine({ height: h, spread: 1.4, lean: 0.9, seed: sd, snowMat: this.mats.snow, density: Q.templePineDensity, lod: 'low', snowStyle: sd % 2 ? 'heavy' : 'light' });
         pine.position.set(px, 0, pz);
         g.add(pine);
       }
       // 篝火（遠くでも見える）
-      const fire = new Bonfire(this.mats, { scale: 1.1, light: true, lightIntensity: 14 });
+      const fire = new Bonfire(this.mats, { scale: 1.1, light: Q.extraLights, lightIntensity: 14 });
       fire.group.position.set(-3.6, 0, 2.2);
       g.add(fire.group);
       this.fires.push(fire);
@@ -502,13 +514,13 @@ export class World {
         ...def, group: g, shoro, halo, fire, fires: [fire, fire2], active: true,
         shumoku: new Shumoku(),
         bellSwing: { a: 0, v: 0 },
-        worldBell: new THREE.Vector3(x, y + 3.0, z),
+        worldBell: new THREE.Vector3(x, y + 4.5, z),
       };
     });
   }
 
   makeSnow() {
-    const n = 5000;
+    const n = Q.snow;
     const pos = new Float32Array(n * 3);
     const seed = new Float32Array(n);
     for (let i = 0; i < n; i++) {
@@ -588,12 +600,26 @@ export class World {
     this.rings.push({ m, age: 0, power, max: local ? 14 : 18, life: local ? 2.4 : 2.8 });
   }
 
+  litMaterial(m) {
+    this._lit ||= new Map();
+    if (!this._lit.has(m)) {
+      const c = m.clone();
+      const bronze = m === this.mats.bronze || m === this.mats.bronzeBand;
+      c.emissive = new THREE.Color(bronze ? 0xffb070 : 0xff9a55);
+      c.emissiveIntensity = bronze ? 0.55 : 0.28;
+      if (m.map) c.emissiveMap = m.map;
+      this._lit.set(m, c);
+    }
+    return this._lit.get(m);
+  }
+
   // 鐘をつき始めた寺だけ篝火を焚き、和尚を立たせる
   setTempleActive(i, on) {
     const t = this.temples[i];
     if (t.active === on) return;
     t.active = on;
     for (const f of t.fires) f.group.visible = on;
+    t.halo.material.opacity = on ? 0.22 : 0;
     if (t.shoro.monk) {
       t.shoro.monk.group.visible = on;
       for (const m of t.shoro.monk.parts) m.visible = on;
@@ -624,7 +650,9 @@ export class World {
       t.bellSwing.v += (-6 * t.bellSwing.a - 0.6 * t.bellSwing.v) * dt;
       t.bellSwing.a += t.bellSwing.v * dt;
       t.shoro.bellPivot.rotation.z = t.bellSwing.a;
-      t.halo.material.opacity *= Math.exp(-dt * 1.2);
+      // 鐘の周りの淡い光は常に灯し、鳴った瞬間に強く光らせる
+      const base = t.active ? 0.22 : 0;
+      t.halo.material.opacity = base + (t.halo.material.opacity - base) * Math.exp(-dt * 1.2);
     }
 
     for (const f of this.fires) f.update(time);
@@ -662,7 +690,12 @@ export class World {
     this.starMat.uniforms.uTime.value = time;
     this.skyMat.uniforms.uDawn.value += ((this.dawn || 0) - this.skyMat.uniforms.uDawn.value) * Math.min(1, dt * 0.5);
 
-    this.composer.render(dt);
+    if (!Q.bloom) {
+      this._shadowT += dt;
+      if (this._shadowT > 0.1) { this.renderer.shadowMap.needsUpdate = true; this._shadowT = 0; }
+    }
+    if (Q.bloom) this.composer.render(dt);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   // ゲーム開始前の準備：シェーダーを組み立て、数フレーム試し描きする

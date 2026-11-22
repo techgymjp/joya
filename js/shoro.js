@@ -1,5 +1,6 @@
 // 鐘楼（しょうろう）・梵鐘・撞木の3Dモデル
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ---- 撞木の振り子 ----
 export const SWING = {
@@ -473,7 +474,11 @@ export function makeShoro(mats, { detail = true, monk = false } = {}) {
   }
 
   const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+  let lastTheta = NaN, lastPull = NaN;
   function setLogAngle(theta, pull = 0) {
+    // 動いていなければ作り直さない（引き綱のチューブ再生成は重い）
+    if (Math.abs(theta - lastTheta) < 1e-4 && Math.abs(pull - lastPull) < 1e-3) return;
+    lastTheta = theta; lastPull = pull;
     const dx = ROPE_L * Math.sin(theta);
     const dy = ROPE_L * (1 - Math.cos(theta));
     log.position.set(logRestX + dx, strikeWorldY + dy, 0);
@@ -500,10 +505,49 @@ export function makeShoro(mats, { detail = true, monk = false } = {}) {
   }
   setLogAngle(0);
 
+  // 動かない部品をまとめる（鐘は鐘の中で、鐘楼は鐘・撞木・綱・和尚を除いてまとめる）
+  mergeStatic(bell);
+  mergeStatic(root, [bellPivot, log, ...ropes, pullRope, monkFig && monkFig.group, ...(monkFig ? monkFig.parts : [])]);
+
   return {
     root, bellPivot, bell, log, setLogAngle, monk: monkFig,
     strikePoint: new THREE.Vector3(strikeX, strikeWorldY, 0),
     bellCenter: new THREE.Vector3(0, BELL_BASE + 0.8, 0),
     ropeLength: ROPE_L,
   };
+}
+
+// 動かない部品を材質ごとに一つのメッシュへまとめ、描画命令の回数を減らす
+// keep: まとめずに残すオブジェクト（動く部品）
+export function mergeStatic(root, keep = []) {
+  const keepSet = new Set();
+  for (const k of keep) if (k) k.traverse((o) => keepSet.add(o));
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const byMat = new Map();
+  const victims = [];
+  root.traverse((o) => {
+    if (o === root || keepSet.has(o) || !o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+    if (Array.isArray(o.material) || !o.geometry.index && !o.geometry.attributes.position) return;
+    const g = o.geometry.clone();
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    const geo = g.index ? g.toNonIndexed() : g;
+    for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
+    if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    const key = o.material;
+    if (!byMat.has(key)) byMat.set(key, { geos: [], cast: false, recv: false });
+    const e = byMat.get(key);
+    e.geos.push(geo);
+    e.cast ||= o.castShadow;
+    e.recv ||= o.receiveShadow;
+    victims.push(o);
+  });
+  for (const o of victims) o.parent.remove(o);
+  for (const [mat, e] of byMat) {
+    const m = new THREE.Mesh(mergeGeometries(e.geos), mat);
+    m.castShadow = e.cast;
+    m.receiveShadow = e.recv;
+    root.add(m);
+  }
 }

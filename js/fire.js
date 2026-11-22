@@ -1,5 +1,7 @@
 // 篝火（かがりび）: 鉄の籠・薪・炎・火の粉・ゆらめく灯り
 import * as THREE from 'three';
+import { Q } from './quality.js';
+import { mergeStatic } from './shoro.js';
 
 const flameVert = /* glsl */`
   attribute vec3 aStart;
@@ -133,17 +135,17 @@ export class Bonfire {
     flameBase.position.y = basketY + 0.15 * s;
     this.group.add(flameBase);
     this.flame = particles({
-      count: 220, spread: 0.2 * s, height: 0.08 * s, vel: [0.25 * s, 0.7 * s], scale: 260 * s,
+      count: Math.round(220 * Q.fireCount), spread: 0.2 * s, height: 0.08 * s, vel: [0.25 * s, 0.7 * s], scale: 260 * s,
       life: 0.75, rise: 0.35 * s, converge: 0.85,
       hot: [1.0, 0.92, 0.65], mid: [1.0, 0.45, 0.08], cool: [0.45, 0.06, 0.01], intensity: 1.1,
     });
     this.core = particles({
-      count: 70, spread: 0.12 * s, height: 0.05 * s, vel: [0.1 * s, 0.4 * s], scale: 200 * s,
+      count: Math.round(70 * Q.fireCount), spread: 0.12 * s, height: 0.05 * s, vel: [0.1 * s, 0.4 * s], scale: 200 * s,
       life: 0.5, rise: 0.15 * s, converge: 0.6,
       hot: [1.0, 1.0, 0.85], mid: [1.0, 0.75, 0.3], cool: [1.0, 0.35, 0.05], intensity: 1.2,
     });
     this.sparks = particles({
-      count: 50, spread: 0.18 * s, height: 0.2 * s, vel: [0.7 * s, 1.1 * s], scale: 22 * s,
+      count: Math.round(50 * Q.fireCount), spread: 0.18 * s, height: 0.2 * s, vel: [0.7 * s, 1.1 * s], scale: 22 * s,
       life: 2.4, rise: 1.4 * s, converge: -0.8,
       hot: [1.0, 0.85, 0.5], mid: [1.0, 0.5, 0.15], cool: [0.8, 0.2, 0.05], intensity: 2.2,
     });
@@ -157,6 +159,7 @@ export class Bonfire {
       this.baseIntensity = lightIntensity * s;
     }
     this.seed = Math.random() * 100;
+    mergeStatic(this.group);
   }
   setPixelScale(k) {
     for (const p of [this.flame, this.core, this.sparks]) p.material.uniforms.uScale.value = p.userData.baseScale * k;
