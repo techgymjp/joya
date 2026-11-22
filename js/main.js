@@ -629,18 +629,18 @@ async function takeRedo() {
 }
 
 // ---- シェア ----
+const SHARE_URL = 'https://techgym.jp/column/claude-code-game-joya/';
 async function shareResult() {
   const r = game.lastResult;
   if (!r) return;
   const text = tr('shareText', r.score, r.rank, r.combo, r.redo);
   try {
     if (Plugins.Share) {
-      await Plugins.Share.share({ title: tr('pageTitle'), text, dialogTitle: tr('share') });
+      await Plugins.Share.share({ title: tr('pageTitle'), text, url: SHARE_URL, dialogTitle: tr('share') });
       return;
     }
-    const url = location.origin + location.pathname; // @web-only
-    if (navigator.share) { await navigator.share({ title: tr('pageTitle'), text, url }); return; } // @web-only
-    await navigator.clipboard.writeText(`${text} ${url}`); // @web-only
+    if (navigator.share) { await navigator.share({ title: tr('pageTitle'), text, url: SHARE_URL }); return; }
+    await navigator.clipboard.writeText(`${text} ${SHARE_URL}`);
     popup(tr('copied'));
   } catch { /* 共有を取りやめた */ }
 }
