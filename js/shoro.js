@@ -284,7 +284,7 @@ export function makeBell(mats, { detail = true } = {}) {
 // 原点 = 地面中央。鐘は x=0,z=0 に吊られ、撞木は -X 側から打つ。
 // ---- 和尚（遠くの寺で鐘をつく人） ----
 // 鐘楼のローカル座標で、引き綱を握る手の位置に合わせて体と腕を動かす
-function makeMonk(mats) {
+function makeMonk(mats, S = 1.3) {
   const robe = mats.robe || new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.95 });
   const kesa = mats.kesa || new THREE.MeshStandardMaterial({ color: 0xb07a22, roughness: 0.8 });
   const skin = mats.skin || new THREE.MeshStandardMaterial({ color: 0xd8b08a, roughness: 0.7 });
@@ -306,6 +306,7 @@ function makeMonk(mats) {
   add(new THREE.SphereGeometry(0.03, 8, 6), skin, 0.0, 1.6, 0.1);              // 耳
   add(new THREE.SphereGeometry(0.03, 8, 6), skin, 0.0, 1.6, -0.1);
   for (const sz of [-1, 1]) add(new THREE.BoxGeometry(0.22, 0.06, 0.1), mats.darkWood || robe, 0.04, 0.03, sz * 0.1); // 草履
+  body.scale.setScalar(S); // 遠くからでも動きが分かるよう少し大きめ
   const group = new THREE.Group();
   group.add(body);
   // 腕（袖）は鐘楼ローカルで毎フレーム置き直す
@@ -322,23 +323,24 @@ function makeMonk(mats) {
   function update(hand, pull) {
     // 引くほど後ろ（-X）へ体重をかけ、半歩下がる
     const lean = 0.08 + pull * 0.32;
-    const footX = hand.x - 0.5 - pull * 0.12;
+    const footX = hand.x - 0.5 * S - pull * 0.12;
     group.position.set(footX, 0, hand.z);
     body.rotation.z = lean;
     const cs = Math.cos(lean), sn = Math.sin(lean);
     [-1, 1].forEach((side, i) => {
       // 肩（体の傾きを反映）
-      const lx = 0.02, ly = 1.42;
-      sh.set(footX + lx * cs - ly * sn, lx * sn + ly * cs, hand.z + side * 0.17);
+      const lx = 0.02 * S, ly = 1.42 * S;
+      sh.set(footX + lx * cs - ly * sn, lx * sn + ly * cs, hand.z + side * 0.17 * S);
       // 手：綱の上で前後に並べて握る
       hd.set(hand.x - (i ? 0.13 : 0), hand.y - (i ? 0.03 : 0), hand.z + side * 0.05);
       const { a, h } = arms[i];
       dir.copy(hd).sub(sh);
       const len = dir.length();
       a.position.copy(sh).addScaledVector(dir, 0.5);
-      a.scale.set(1, len, 1);
+      a.scale.set(S, len, S);
       a.quaternion.setFromUnitVectors(up, dir.normalize());
       h.position.copy(hd);
+      h.scale.setScalar(S);
     });
   }
   return { group, parts: arms.flatMap(({ a, h }) => [a, h]), update };

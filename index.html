@@ -25,7 +25,6 @@
         <div class="count"><span class="label" data-i18n="countPre">第</span><span id="count">0</span><span class="label" data-i18n="countPost">打</span><span class="total">/ <span id="total">108</span></span></div>
         <div class="clock" id="clock">23:00</div>
       </div>
-      <div class="temples" id="temples"></div>
       <div class="hud-box right">
         <div class="score-label" data-i18n="score">得点</div>
         <div class="score" id="score">0</div>
@@ -124,7 +123,10 @@
     </div>
   </div>
 
-  <div id="loading" class="overlay"><div class="loading-text" data-i18n="loading">鐘楼を建てています…</div></div>
+  <div id="loading" class="overlay"><div class="loading-box"><div class="loading-text" data-i18n="loading">鐘楼を建てています…</div><div class="load-bar"><i id="loadFill"></i></div></div></div>
+
+  <!-- 縦向きのスマホでは横向きを案内 -->
+  <div id="rotate"><div class="rotate-box"><div class="phone"></div><p data-i18n="rotate">画面を横向きにしてお楽しみください</p></div></div>
 
   <script type="module" src="js/main.js"></script>
 </body>

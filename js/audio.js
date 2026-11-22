@@ -20,7 +20,7 @@ const PARTIALS = [
 const CLANG = [[9.1, 0.12, 0.5], [11.7, 0.08, 0.35], [14.3, 0.05, 0.25], [17.9, 0.03, 0.18]];
 
 // 全体の音量
-const MASTER = 2.6;
+const MASTER = 1.6;
 
 export class BellAudio {
   constructor() {
@@ -40,13 +40,28 @@ export class BellAudio {
     this.master = ctx.createGain();
     this.master.gain.value = MASTER;
     // 全体を大きくしても割れないよう、最後に強めのコンプレッサー（リミッター代わり）
+    // 穏やかに効かせる（速く強いコンプは低音を歪ませ、ビリつきの原因になる）
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -12;
-    comp.knee.value = 6;
-    comp.ratio.value = 8;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.3;
-    this.master.connect(comp).connect(ctx.destination);
+    comp.threshold.value = -16;
+    comp.knee.value = 12;
+    comp.ratio.value = 3.5;
+    comp.attack.value = 0.02;
+    comp.release.value = 0.45;
+    // スマホのスピーカーで鳴らない重低音はカット（震えて濁るのを防ぐ）
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 70;
+    hp.Q.value = 0.6;
+    // 最後にピークだけを抑えるリミッター（重なっても割れない）
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -4;
+    lim.knee.value = 0;
+    lim.ratio.value = 20;
+    lim.attack.value = 0.001;
+    lim.release.value = 0.12;
+    const out = ctx.createGain();
+    out.gain.value = 0.9;
+    this.master.connect(hp).connect(comp).connect(lim).connect(out).connect(ctx.destination);
 
     // 残響（合成インパルス応答）
     this.reverb = ctx.createConvolver();
@@ -170,6 +185,15 @@ export class BellAudio {
     }
   }
 
+  // 音の準備ができるまで待つ（再開直後のプツッという音や途切れを避けるため少し余裕を置く）
+  async ready() {
+    if (!this.ctx) return;
+    if (this.ctx.state !== 'running') {
+      try { await this.ctx.resume(); } catch { /* 再開できない環境 */ }
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
   impulse(seconds, decay) {
     const ctx = this.ctx;
     const len = Math.floor(ctx.sampleRate * seconds);
@@ -212,22 +236,26 @@ export class BellAudio {
     this.crackleTimer = setInterval(() => this.crackle(), 180);
   }
 
+  // 篝火のはぜる音：低めで柔らかい「パチッ」。立ち上がりにわずかな傾斜を付けてクリック音を防ぐ
   crackle() {
-    if (!this.ctx || this.muted || Math.random() > 0.25) return;
+    if (!this.ctx || this.muted || Math.random() > 0.14) return;
     const ctx = this.ctx;
-    const t = ctx.currentTime;
+    const t = ctx.currentTime + 0.01;
     const src = ctx.createBufferSource();
-    src.buffer = this.crackBuf || (this.crackBuf = this.noiseBuffer(0.05));
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'bandpass';
-    hp.frequency.value = 1500 + Math.random() * 2500;
+    src.buffer = this.crackBuf || (this.crackBuf = this.noiseBuffer(0.12));
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 700 + Math.random() * 1300;
+    bp.Q.value = 1.2;
     const g = ctx.createGain();
-    const v = 0.008 + Math.random() * 0.02;
-    g.gain.setValueAtTime(v, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.04);
-    src.connect(hp).connect(g).connect(this.master);
+    const v = 0.004 + Math.random() * 0.008;
+    const len = 0.04 + Math.random() * 0.06;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(v, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(bp).connect(g).connect(this.master);
     src.start(t);
-    src.stop(t + 0.1);
+    src.stop(t + len + 0.02);
   }
 
   // power: 0..1、opts: {pitch, gain, cutoff, pan, wet, dry}

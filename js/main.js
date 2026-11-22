@@ -71,7 +71,6 @@ function updateActiveTemples(announce) {
       world.setTempleActive(t.idx, on);
       if (on && announce) popup(tr('joined', templeName(t.idx)), tr('joinedSub'), 'reso');
     }
-    templeEls[t.idx].classList.toggle('off', !on);
     if (!on) t.plan = null;
     else if (!t.plan) planTemple(t, time + 2 + Math.random() * 2);
   }
@@ -114,10 +113,6 @@ function onTempleRing(t, power) {
   world.ringTemple(t.idx, power);
   // 距離に応じた遅れはごく僅かなので省略
   audio.distantBell(power, t.def.pitch, t.def.pan, t.def.vol);
-  const el = templeEls[t.idx];
-  el.classList.remove('flash');
-  void el.offsetWidth;
-  el.classList.add('flash');
   if (game.state === 'play' || game.state === 'final') {
     for (const s of game.pending) {
       if (!s.resolved && time - s.t <= COMBO_WIN) s.temples.add(t.idx);
@@ -126,13 +121,6 @@ function onTempleRing(t, power) {
 }
 
 // ---- HUD ----
-const templeEls = TEMPLE_DEFS.map((d) => {
-  const el = document.createElement('div');
-  el.className = 'temple';
-  el.innerHTML = '<div class="view"></div><div class="name"></div>';
-  $('temples').appendChild(el);
-  return el;
-});
 
 function popup(text, sub = '', cls = '') {
   const el = document.createElement('div');
@@ -167,7 +155,6 @@ function setBonnou() {
 
 function applyLang() {
   applyStatic();
-  templeEls.forEach((el, i) => { el.querySelector('.name').textContent = templeName(i); });
   if (game.state !== 'title') { setBonnou(); updateHud(); }
   const best = loadBest(108);
   $('best').textContent = best ? tr('best', best) : '';
@@ -417,11 +404,27 @@ function showResult() {
   $('hud').classList.add('hidden');
 }
 
-$('start').addEventListener('click', () => startGame(108));
+// 音はブラウザの決まりで最初の操作まで準備できないので、タイトルで最初に触れた時点で準備する
+window.addEventListener('pointerdown', () => audio.init(), { once: true });
+// スマホ：全画面にして横向きに固定（対応端末のみ。iPhone などは案内表示で横向きにしてもらう）
+async function goLandscape() {
+  if (!matchMedia('(pointer: coarse)').matches) return;
+  try {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+    if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+  } catch { /* 非対応の環境 */ }
+}
+async function beginWhenReady() {
+  goLandscape();
+  audio.init();
+  await audio.ready();
+  startGame(108);
+}
+$('start').addEventListener('click', beginWhenReady);
 document.querySelectorAll('[data-lang-toggle]').forEach((b) => {
   b.addEventListener('click', () => { setLang(getLang() === 'ja' ? 'en' : 'ja'); applyLang(); });
 });
-$('howtoStart').addEventListener('click', () => { $('howto').classList.add('hidden'); startGame(108); });
+$('howtoStart').addEventListener('click', () => { $('howto').classList.add('hidden'); beginWhenReady(); });
 $('openHowto').addEventListener('click', () => {
   $('title').classList.add('hidden');
   $('howto').classList.remove('hidden');
@@ -475,30 +478,32 @@ function frame(now) {
   $('gaugeMarker').style.height = `${(input.holding ? input.pull : 0) * 100}%`;
   const y = Math.max(0, Math.min(1, yoinNow()));
   $('yoinRing').style.setProperty('--y', y.toFixed(3));
-  // 遠見の小窓：鳴らしている寺の和尚を望遠で映す
-  const insets = [];
-  if (game.state !== 'title' && game.state !== 'end') {
-    for (const t of temples) {
-      if (!t.active) continue;
-      const r = templeEls[t.idx].querySelector('.view').getBoundingClientRect();
-      if (r.width > 0) insets.push({ idx: t.idx, rect: r });
-    }
-  }
-  world.insets = insets;
 
   world.update(dt, time);
   requestAnimationFrame(frame);
 }
 
-// ---- 起動 ----
-try {
-  applyStatic();
-  world = new World($('scene'));
-  window.__joya = { world, game };
-  $('loading').classList.add('hidden');
-  showTitle();
-  requestAnimationFrame(frame);
-} catch (err) {
-  console.error(err);
-  $('loading').querySelector('.loading-text').textContent = tr('noWebgl');
-}
+// ---- 起動：すべて読み込んで試し描きを済ませてからタイトルを出す ----
+const setProgress = (v) => { $('loadFill').style.width = `${Math.round(v * 100)}%`; };
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+(async () => {
+  try {
+    applyStatic();
+    setProgress(0.05);
+    await nextFrame();
+    await nextFrame();
+    world = new World($('scene'));
+    window.__joya = { world, game };
+    setProgress(0.3);
+    await world.warmup(setProgress);
+    setProgress(1);
+    showTitle();
+    last = performance.now();
+    requestAnimationFrame(frame);
+    await new Promise((r) => setTimeout(r, 250));
+    $('loading').classList.add('hidden');
+  } catch (err) {
+    console.error(err);
+    $('loading').querySelector('.loading-text').textContent = tr('noWebgl');
+  }
+})();

@@ -7,7 +7,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as TX from './textures.js';
 import { makeShoro, makeRoof, Shumoku, SWING } from './shoro.js';
 import { Bonfire } from './fire.js';
-import { makePine } from './pine.js';
+import { makePine, makePineForest } from './pine.js';
 
 // ---- 地形 ----
 function hash(x, y) {
@@ -27,21 +27,52 @@ function fbm(x, y) {
   return s;
 }
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-// カメラの基準位置（横長画面）。遠くの寺はこの視点から見えるように配置する
-export const CAM = { x: -8, z: 12 };
-const fromCam = (deg, d) => [CAM.x + Math.sin(deg * Math.PI / 180) * d, CAM.z - Math.cos(deg * Math.PI / 180) * d];
+// ---- 望遠カメラ ----
+// 鐘楼の左前、約42m離れた位置から望遠で撮る。望遠の圧縮効果で、遠くの寺も小さくなりすぎない。
+const TELE_DIR = new THREE.Vector2(-8, 12).normalize(); // 鐘楼から見たカメラの方向
+const TELE_DIST = 42;
+export const CAM = { x: TELE_DIR.x * TELE_DIST, y: 3.4, z: TELE_DIR.y * TELE_DIST };
+const FWD_DEG = Math.atan2(-TELE_DIR.x, TELE_DIR.y) * 180 / Math.PI; // カメラ→鐘楼の方位（-Z から右回り）
+// 鐘楼を基準にした相対方位（右が正）と距離から位置を求める
+const fromCam = (rel, d) => {
+  const a = (FWD_DEG + rel) * Math.PI / 180;
+  return [CAM.x + Math.sin(a) * d, CAM.z - Math.cos(a) * d];
+};
+// カメラから見た方向（相対方位・仰角）の単位ベクトル
+export function camDir(rel, el) {
+  const a = (FWD_DEG + rel) * Math.PI / 180, e = el * Math.PI / 180;
+  return new THREE.Vector3(Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e));
+}
 
-// 遠くの寺の配置（視点から見た方角・距離・丘の高さ）
+// カメラ→鐘楼の線の周りは地形をならす
+function corridorMask(x, z) {
+  const ax = CAM.x, az = CAM.z;
+  const vx = -ax, vz = -az;
+  const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz)));
+  const d = Math.hypot(x - (ax + vx * t), z - (az + vz * t));
+  return smooth(7, 18, d);
+}
+
+function baseHeight(x, z) {
+  const r = Math.hypot(x, z + 4);
+  const hills = fbm(x * 0.03 + 3, z * 0.03 + 7) * 16 - 3;
+  return Math.max(0, hills) * smooth(12, 34, r) * 0.7 * corridorMask(x, z) + smooth(60, 200, r) * 10;
+}
+
+// 遠くの寺：鐘楼から見た相対方位・カメラからの距離・土台の仰角（度）
+function templeAt(rel, d, el) {
+  const pos = fromCam(rel, d);
+  const want = CAM.y + Math.tan(el * Math.PI / 180) * d;
+  return { pos, hill: want - baseHeight(pos[0], pos[1]) };
+}
 export const TEMPLE_DEFS = [
-  { name: '西の寺', pos: fromCam(-3, 62), hill: 7, period: 8.6, pitch: 1.22, pan: -0.6, vol: 0.45, join: 0 },
-  { name: '北の寺', pos: fromCam(2.5, 115), hill: 17, period: 11.2, pitch: 1.05, pan: -0.15, vol: 0.38, join: 2 },
-  { name: '東の寺', pos: fromCam(8, 82), hill: 11, period: 9.7, pitch: 1.4, pan: 0.2, vol: 0.42, join: 1 },
+  { name: '西の寺', ...templeAt(-9.5, 100, 2.6), period: 8.6, pitch: 1.22, pan: -0.6, vol: 0.45, join: 0 },
+  { name: '北の寺', ...templeAt(-3.5, 165, 6.0), period: 11.2, pitch: 1.05, pan: -0.15, vol: 0.38, join: 2 },
+  { name: '東の寺', ...templeAt(7.6, 130, 4.0), period: 9.7, pitch: 1.4, pan: 0.2, vol: 0.42, join: 1 },
 ];
 
 export function groundHeight(x, z) {
-  const r = Math.hypot(x, z + 4);
-  const hills = fbm(x * 0.03 + 3, z * 0.03 + 7) * 16 - 3;
-  let h = Math.max(0, hills) * smooth(12, 34, r) * 0.7 + smooth(40, 160, r) * 10;
+  let h = baseHeight(x, z);
   for (const d of TEMPLE_DEFS) {
     const dd = (x - d.pos[0]) ** 2 + (z - d.pos[1]) ** 2;
     h += d.hill * Math.exp(-dd / 500);
@@ -61,7 +92,7 @@ export class World {
     this.renderer = renderer;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0b1226, 0.0075);
+    scene.fog = new THREE.FogExp2(0x0b1226, 0.0045);
     scene.background = new THREE.Color(0x070b18);
     this.scene = scene;
 
@@ -205,8 +236,8 @@ export class World {
     this.scene.add(new THREE.Points(g, this.starMat));
     // 月
     const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: TX.moonTexture(), fog: false, depthWrite: false, transparent: true }));
-    moon.position.set(-170, 160, -330);
-    moon.scale.set(70, 70, 1);
+    moon.position.set(CAM.x, CAM.y, CAM.z).addScaledVector(camDir(6, 9), 420);
+    moon.scale.set(24, 24, 1);
     this.scene.add(moon);
   }
 
@@ -374,7 +405,7 @@ export class World {
       if (Math.abs(x) < 3.5 && z > 4 && z < 30) return; // 参道
       if (Math.hypot(x - 19, z + 1) < 11) return; // 本堂
       // 手前左の視界を空ける
-      { const ang = Math.atan2(x - CAM.x, -(z - CAM.z)) * 180 / Math.PI; const dist = Math.hypot(x - CAM.x, z - CAM.z); if (ang > -14 && ang < 20 && dist < 26) return; }
+      { const ang = Math.atan2(x - CAM.x, -(z - CAM.z)) * 180 / Math.PI - FWD_DEG; const dist = Math.hypot(x - CAM.x, z - CAM.z); if (ang > -22 && ang < 20 && dist < 50) return; }
       for (const d of TEMPLE_DEFS) {
         if (Math.hypot(x - d.pos[0], z - d.pos[1]) < 8) return;
         // 視線上（カメラ→寺）を空ける
@@ -388,7 +419,7 @@ export class World {
       }
       spots.push([x, z, s]);
     };
-    for (let i = 0; i < 1400 && spots.length < 420; i++) {
+    for (let i = 0; i < 1400 && spots.length < 170; i++) {
       const a = rnd() * Math.PI * 2;
       const r = 10 + rnd() * 150;
       tryAdd(Math.cos(a) * r, Math.sin(a) * r - 6, 0.7 + rnd() * 0.8);
@@ -399,25 +430,19 @@ export class World {
       const r = 8 + rnd() * 10;
       tryAdd(d.pos[0] + Math.cos(a) * r * -1, d.pos[1] + Math.sin(a) * r * -1, 0.8 + rnd() * 0.6);
     }
-    const n = spots.length;
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.28, 3, 6), this.mats.darkWood, n);
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x14261c, roughness: 1 });
-    const tiers = [[2.4, 3.2, 2.6], [1.9, 2.8, 4.4], [1.35, 2.5, 6.1], [0.8, 2.1, 7.6]];
-    const leaves = tiers.map(([r, h]) => new THREE.InstancedMesh(new THREE.ConeGeometry(r, h, 9), leafMat, n));
-    const snows = tiers.map(([r, h]) => new THREE.InstancedMesh(new THREE.ConeGeometry(r * 0.82, h * 0.42, 9), this.mats.snow, n));
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3();
-    spots.forEach(([x, z, s], i) => {
-      const y = groundHeight(x, z);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), x * 13.1);
-      sv.set(s, s, s);
-      pv.set(x, y + 1.5 * s, z);
-      m.compose(pv, q, sv); trunk.setMatrixAt(i, m);
-      tiers.forEach(([, h, ty], k) => {
-        pv.set(x, y + ty * s, z); m.compose(pv, q, sv); leaves[k].setMatrixAt(i, m);
-        pv.set(x, y + (ty + h * 0.32) * s, z); m.compose(pv, q, sv); snows[k].setMatrixAt(i, m);
-      });
-    });
-    for (const im of [trunk, ...leaves, ...snows]) { im.castShadow = true; im.receiveShadow = true; this.scene.add(im); }
+    // 背景の松：段作り・庭木の形を数種類作り、向きと大きさを変えて並べる
+    const variants = [
+      { form: 'tiered', height: 6.5, spread: 2.0, lean: 0.9, seed: 101, snowStyle: 'light', density: 0.28 },
+      { form: 'tiered', height: 7.5, spread: 2.3, lean: 1.4, seed: 102, snowStyle: 'light', density: 0.28 },
+      { form: 'tiered', height: 5.5, spread: 1.9, lean: 0.6, seed: 103, snowStyle: 'heavy', density: 0.28 },
+      { form: 'tiered', height: 8.5, spread: 2.2, lean: 1.8, seed: 104, snowStyle: 'light', density: 0.25 },
+      { form: 'garden', height: 4.5, spread: 2.2, lean: 1.5, seed: 105, snowStyle: 'heavy', density: 0.3 },
+      { form: 'garden', height: 5.0, spread: 2.0, lean: 1.2, seed: 106, snowStyle: 'light', density: 0.3 },
+    ];
+    const placements = spots.map(([x, z, s], i) => ({
+      v: i % variants.length, x, y: groundHeight(x, z) - 0.05, z, rot: x * 13.1 + z * 7.7, scale: s,
+    }));
+    this.scene.add(makePineForest(variants, placements, this.mats.snow));
   }
 
   // 境内の松（雪吊り・こも巻き付き）
@@ -447,7 +472,7 @@ export class World {
       const dx = x - cam.x, dz = z - cam.z;
       g.rotation.y = Math.atan2(dx, dz) + Math.PI; // 和尚と篝火が手前に来る向き
       g.position.set(x, y - 0.1, z);
-      g.scale.setScalar(1.5);
+      g.scale.setScalar(1.25);
       // 地面の起伏に合わせた土台
       const fdn = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 5.5, 3, 16), this.mats.stone);
       fdn.position.y = -1.45;
@@ -477,7 +502,7 @@ export class World {
         ...def, group: g, shoro, halo, fire, fires: [fire, fire2], active: true,
         shumoku: new Shumoku(),
         bellSwing: { a: 0, v: 0 },
-        worldBell: new THREE.Vector3(x, y + 3.6, z),
+        worldBell: new THREE.Vector3(x, y + 3.0, z),
       };
     });
   }
@@ -526,18 +551,21 @@ export class World {
     this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     const portrait = w / h < 1;
-    this.camera.fov = portrait ? 70 : 42;
+    // 望遠（横長は狭い画角、縦長は横幅を確保するため少し広め）
+    this.camera.fov = portrait ? 34 : 17.5;
     this.camera.updateProjectionMatrix();
     if (portrait) {
       // 縦長：鐘楼の階段の手前から鐘を見上げる。鐘の左奥に遠くの寺が見える
-      this.camBase.set(-1.29, 1.2, 4.83);
-      this.camTarget.set(-0.59, 3.68, -5.15);
+      this.camBase.set(CAM.x, CAM.y, CAM.z);
+      this.camTarget.copy(this.camBase).addScaledVector(camDir(-0.8, 2.2), 10);
     } else {
-      this.camBase.set(CAM.x, 2.4, CAM.z);
-      this.camTarget.set(-1.7, 2.9, -1.6);
+      this.camBase.set(CAM.x, CAM.y, CAM.z);
+      this.camTarget.copy(this.camBase).addScaledVector(camDir(-1.5, 3.2), 10);
     }
     const pr = this.renderer.getPixelRatio();
-    const pxScale = (h * pr) / 900;
+    // 望遠では粒（雪・炎）も相対的に大きく見えるよう、画角に応じて拡大
+    const zoom = Math.tan(THREE.MathUtils.degToRad(21)) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const pxScale = (h * pr) / 900 * zoom;
     for (const f of this.fires) f.setPixelScale(pxScale);
     this.snowMat.uniforms.uPx.value = 900 * pxScale * 1.4;
     this.starMat.uniforms.uPx.value = pr;
@@ -620,55 +648,41 @@ export class World {
     this.shake *= Math.exp(-dt * 5);
     const cam = this.camera;
     cam.position.copy(this.camBase);
-    cam.position.x += Math.sin(time * 0.13) * 0.25;
+    cam.position.x += Math.sin(time * 0.13) * 0.5;
     cam.position.y += Math.sin(time * 0.21) * 0.08;
-    cam.position.x += (Math.random() - 0.5) * this.shake * 0.3;
-    cam.position.y += (Math.random() - 0.5) * this.shake * 0.3;
-    cam.lookAt(this.camTarget);
+    // 望遠では位置を揺らしても画が動かないので、向きを揺らす
+    this._look = (this._look || new THREE.Vector3()).copy(this.camTarget);
+    this._look.x += (Math.random() - 0.5) * this.shake * 0.12;
+    this._look.y += (Math.random() - 0.5) * this.shake * 0.12;
+    cam.lookAt(this._look);
 
     this.snowMat.uniforms.uTime.value = time;
-    this.snowMat.uniforms.uCenter.value.copy(cam.position);
+    // 雪はカメラと鐘楼の間から鐘楼の周りに降らせる
+    this.snowMat.uniforms.uCenter.value.copy(cam.position).lerp(this.camTarget, 2.6);
     this.starMat.uniforms.uTime.value = time;
     this.skyMat.uniforms.uDawn.value += ((this.dawn || 0) - this.skyMat.uniforms.uDawn.value) * Math.min(1, dt * 0.5);
 
     this.composer.render(dt);
-    this.renderInsets();
   }
 
-  // 遠見（望遠）の小窓：各寺の和尚と鐘を、画面上部の枠の位置に描く
-  renderInsets() {
-    const list = this.insets || [];
-    if (!list.length) return;
-    const r = this.renderer;
-    const H = window.innerHeight;
-    if (!this.insetCam) this.insetCam = new THREE.PerspectiveCamera(8, 1.5, 1, 600);
-    const cam = this.insetCam;
-    const target = new THREE.Vector3();
-    r.shadowMap.autoUpdate = false;
-    this.snowPoints.visible = false;
-    r.setScissorTest(true);
-    for (const { idx, rect } of list) {
-      const t = this.temples[idx];
-      // 和尚と撞木と鐘がおさまる点（鐘楼ローカル）
-      t.group.localToWorld(target.set(-2.0, 2.05, 0.3));
-      cam.position.copy(this.camera.position);
-      const dist = cam.position.distanceTo(target);
-      cam.fov = THREE.MathUtils.radToDeg(2 * Math.atan(4.1 / dist));
-      cam.aspect = rect.width / rect.height;
-      cam.near = Math.max(1, dist - 40);
-      cam.far = dist + 120;
-      cam.updateProjectionMatrix();
-      cam.lookAt(target);
-      const y = H - rect.bottom;
-      r.setViewport(rect.left, y, rect.width, rect.height);
-      r.setScissor(rect.left, y, rect.width, rect.height);
-      r.render(this.scene, cam);
+  // ゲーム開始前の準備：シェーダーを組み立て、数フレーム試し描きする
+  async warmup(onProgress = () => {}) {
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+    onProgress(0.35);
+    await frame();
+    try {
+      if (this.renderer.compileAsync) await this.renderer.compileAsync(this.scene, this.camera);
+      else this.renderer.compile(this.scene, this.camera);
+    } catch (e) { console.warn(e); }
+    onProgress(0.6);
+    await frame();
+    for (let k = 0; k < 4; k++) {
+      this.update(1 / 60, k / 60);
+      onProgress(0.6 + 0.1 * (k + 1));
+      await frame();
     }
-    r.setScissorTest(false);
-    r.setViewport(0, 0, window.innerWidth, H);
-    this.snowPoints.visible = true;
-    r.shadowMap.autoUpdate = true;
   }
+
 }
 
 export { SWING };

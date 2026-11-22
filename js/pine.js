@@ -26,8 +26,13 @@ function sharedAssets() {
   const core = new THREE.SphereGeometry(1, 12, 7);
   const tuft = TX.needleTuftTexture();
   const bark = TX.pineBarkTexture();
+  // 遠景用の軽い形
+  const snowLow = new THREE.SphereGeometry(1, 7, 4);
+  const sl = snowLow.attributes.position;
+  for (let i = 0; i < sl.count; i++) { v.fromBufferAttribute(sl, i); if (v.y < 0) v.y *= 0.25; sl.setXYZ(i, v.x, v.y, v.z); }
+  snowLow.computeVertexNormals();
   shared = {
-    snow, core,
+    snow, core, snowLow,
     bark: new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 3, roughness: 0.95, color: 0x8a7a70 }),
     needles: new THREE.MeshStandardMaterial({
       map: tuft, alphaTest: 0.45, side: THREE.DoubleSide, vertexColors: true, roughness: 0.85,
@@ -119,13 +124,66 @@ class Foliage {
  *  snowStyle: 'heavy'（ふっくら厚い雪）| 'light'（松葉にうっすら積もる薄雪）
  *  longBranch: 低く横へ長く伸びる枝を加える
  */
-export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukitsuri = false, snowMat, density = 1, snowStyle = 'heavy', longBranch = false }) {
+export function makePine(opts) {
+  const A = sharedAssets();
+  const g = buildPine(opts);
+  const group = new THREE.Group();
+  const add = (geo, mat) => {
+    if (!geo) return null;
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    group.add(m);
+    return m;
+  };
+  add(g.bark, A.bark);
+  add(g.core, A.coreMat);
+  const needles = add(g.needles, A.needles);
+  needles.customDepthMaterial = A.needleDepth;
+  add(g.snow, opts.snowMat);
+  add(g.straw, A.straw);
+  return group;
+}
+
+// 同じ形をたくさん並べる（背景の松）ためのインスタンス描画
+export function makePineForest(variants, placements, snowMat) {
+  const A = sharedAssets();
+  const group = new THREE.Group();
+  const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3();
+  variants.forEach((opts, vi) => {
+    const list = placements.filter((p) => p.v === vi);
+    if (!list.length) return;
+    const g = buildPine({ ...opts, lod: 'low' });
+    const parts = [[g.bark, A.bark], [g.core, A.coreMat], [g.needles, A.needles], [g.snow, snowMat]];
+    for (const [geo, mat] of parts) {
+      if (!geo) continue;
+      const im = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((p, i) => {
+        qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.rot);
+        sv.setScalar(p.scale);
+        pv.set(p.x, p.y, p.z);
+        m.compose(pv, qq, sv);
+        im.setMatrixAt(i, m);
+      });
+      im.castShadow = false; // 遠景は影を落とさない（軽量化）
+      im.receiveShadow = true;
+      group.add(im);
+    }
+  });
+  return group;
+}
+
+/** 松の形をジオメトリとして作る（form: 'garden' 庭木の松 | 'tiered' 段作りの松） */
+export function buildPine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukitsuri = false, density = 1, snowStyle = 'heavy', longBranch = false, form = 'garden', lod = 'high' }) {
+  const low = lod === 'low';
   const heavy = snowStyle !== 'light';
+  const tiered = form === 'tiered';
   const white = new THREE.Color(0xe4eaf2);
   const A = sharedAssets();
   const rnd = rng(seed);
   const H = height;
-  const r0 = 0.06 * H + 0.1;
+  const r0 = tiered ? 0.035 * H + 0.07 : 0.06 * H + 0.1;
+  const flat = tiered ? 0.27 : 0.42; // 葉の層の厚み
 
   // ---- 幹：何度も曲がりながら傾く ----
   const turn = rnd() * Math.PI * 2;
@@ -142,8 +200,8 @@ export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukit
     ));
   }
   const trunk = new THREE.CatmullRomCurve3(pts);
-  const barkGeos = [taperTube(trunk, 36, 12, r0, r0 * 0.28)];
-  const root = new THREE.CylinderGeometry(r0 * 0.98, r0 * 1.5, 0.22, 14, 1, true);
+  const barkGeos = [taperTube(trunk, low ? 10 : 36, low ? 5 : 12, r0, r0 * 0.28)];
+  const root = new THREE.CylinderGeometry(r0 * 0.98, r0 * 1.5, 0.22, low ? 6 : 14, 1, true);
   root.translate(0, 0.09, 0);
   barkGeos.push(root);
   const snowGeos = [], coreGeos = [];
@@ -155,22 +213,22 @@ export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukit
   const branchSnow = (curve, rA, rB) => {
     const pts2 = curve.getSpacedPoints(10).map((p, i) => p.clone().add(new THREE.Vector3(0, (rA + (rB - rA) * (i / 10)) * 0.85, 0)));
     const k = heavy ? 1 : 0.55;
-    snowGeos.push(taperTube(new THREE.CatmullRomCurve3(pts2), 10, 6, rA * 0.75 * k, rB * 0.6 * k, 0.55));
+    snowGeos.push(taperTube(new THREE.CatmullRomCurve3(pts2), low ? 4 : 10, low ? 3 : 6, rA * 0.75 * k, rB * 0.6 * k, 0.55));
   };
 
   // ---- 葉の塊（雪をかぶる） ----
   const lump = (c, R, rot) => {
-    // 暗い芯
-    coreGeos.push(placed(A.core, c.clone().add(new THREE.Vector3(0, -R * 0.05, 0)), new THREE.Vector3(R * 0.85, R * 0.32, R * 0.72), rot));
+    // 暗い芯（遠景では省く）
+    if (!low) coreGeos.push(placed(A.core, c.clone().add(new THREE.Vector3(0, -R * 0.05, 0)), new THREE.Vector3(R * 0.85, R * flat * 0.75, R * 0.72), rot));
     // 松葉の房：下半分と縁に多く、雪の下からのぞく
-    const n = Math.max(10, Math.round(34 * density * Math.pow(R / 0.45, 2)));
+    const n = Math.max(low ? 5 : 10, Math.round(34 * density * Math.pow(R / 0.45, 2)));
     for (let k = 0; k < n; k++) {
       const a = rnd() * Math.PI * 2;
       const rr = Math.pow(rnd(), 0.35);
       // 深雪：上は雪の中なので下半分と縁に。薄雪：上面にも房を並べる
       const yy = heavy ? -0.55 + rnd() * 0.9 : -0.5 + rnd() * 1.05;
-      const p = new THREE.Vector3(Math.cos(a) * rr * R * 1.05, yy * R * 0.42, Math.sin(a) * rr * R * 0.9);
-      const out = p.clone().normalize().lerp(up, 0.25 + rnd() * 0.3);
+      const p = new THREE.Vector3(Math.cos(a) * rr * R * 1.05, yy * R * flat, Math.sin(a) * rr * R * 0.9);
+      const out = p.clone().normalize().lerp(up, (tiered ? 0.5 : 0.25) + rnd() * 0.3);
       p.add(c);
       const lightness = 0.2 + rnd() * 0.14;
       col.setHSL(0.28 + rnd() * 0.06, 0.42, lightness);
@@ -184,22 +242,22 @@ export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukit
       // 薄雪：房の間に薄く載るだけ
       if (rnd() < 0.75) {
         const pos = c.clone().add(new THREE.Vector3(0, R * 0.14, 0));
-        snowGeos.push(placed(A.snow, pos, new THREE.Vector3(R * 0.8, R * 0.13, R * 0.68), rot + rnd()));
+        snowGeos.push(placed(low ? A.snowLow : A.snow, pos, new THREE.Vector3(R * 0.8, R * 0.13, R * 0.68), rot + rnd()));
       }
       return;
     }
-    const blobs = 1 + Math.floor(rnd() * 3);
+    const blobs = low ? 1 : 1 + Math.floor(rnd() * 3);
     for (let b = 0; b < blobs; b++) {
       const ba = rot + b * 2.1 + rnd();
       const off = b === 0 ? 0 : R * (0.3 + rnd() * 0.25);
       const sc = b === 0 ? 1 : 0.6 + rnd() * 0.25;
       const pos = c.clone().add(new THREE.Vector3(Math.cos(ba) * off, R * (0.12 + rnd() * 0.06), Math.sin(ba) * off));
-      snowGeos.push(placed(A.snow, pos, new THREE.Vector3(R * 1.02 * sc, R * (0.5 + rnd() * 0.15) * sc, R * 0.88 * sc), ba));
+      snowGeos.push(placed(low ? A.snowLow : A.snow, pos, new THREE.Vector3(R * 1.02 * sc, R * (0.5 + rnd() * 0.15) * sc, R * 0.88 * sc), ba));
     }
   };
   const addPad = (c, R, rot) => {
     lump(c, R, rot);
-    const k = 2 + Math.floor(rnd() * 3);
+    const k = low ? 2 : 2 + Math.floor(rnd() * 3);
     for (let j = 0; j < k; j++) {
       const a = rot + (j / k) * Math.PI * 2 + rnd() * 0.8;
       const d = R * (0.6 + rnd() * 0.35);
@@ -207,8 +265,41 @@ export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukit
     }
   };
 
+  // ---- 段作り：細い幹から薄く平らな層が左右交互に張り出す ----
+  if (tiered) {
+    const nt = 8 + Math.floor(rnd() * 4);
+    for (let i = 0; i < nt; i++) {
+      const t = 0.22 + (0.74 * i) / (nt - 1) + (rnd() - 0.5) * 0.04;
+      const P = trunk.getPointAt(Math.min(0.97, t));
+      const az = turn + (i % 2 ? Math.PI : 0) + i * 0.45 + (rnd() - 0.5) * 0.9;
+      const dir = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
+      const side = new THREE.Vector3(-dir.z, 0, dir.x);
+      const L = spread * (0.55 + 0.45 * rnd()) * (1.15 - 0.6 * t);
+      const curve = new THREE.CatmullRomCurve3([
+        P,
+        P.clone().addScaledVector(dir, L * 0.5).add(new THREE.Vector3(0, -0.04, 0)).addScaledVector(side, (rnd() - 0.5) * 0.2),
+        P.clone().addScaledVector(dir, L).add(new THREE.Vector3(0, 0.05, 0)),
+      ]);
+      const rb = r0 * (0.42 - 0.2 * t);
+      barkGeos.push(taperTube(curve, low ? 4 : 8, low ? 3 : 5, rb, 0.02));
+      branchSnow(curve, rb, 0.025);
+      // 枝に沿って平らな層を並べる
+      const R = spread * (0.3 + 0.12 * rnd()) * (1.1 - 0.45 * t);
+      for (const u of low ? [0.6, 1] : [0.45, 0.72, 1]) {
+        const c = curve.getPointAt(u).add(new THREE.Vector3(0, R * 0.12, 0)).addScaledVector(side, (rnd() - 0.5) * R * 0.8);
+        lump(c, R * (u === 1 ? 1 : 0.85), az + u);
+      }
+      // 反対側に短い層を添える
+      if (!low && rnd() < 0.5) {
+        const c = P.clone().addScaledVector(side, (rnd() < 0.5 ? -1 : 1) * L * 0.35).add(new THREE.Vector3(0, R * 0.1, 0));
+        lump(c, R * 0.6, az + 1.5);
+      }
+    }
+    addPad(trunk.getPointAt(1).add(new THREE.Vector3(0, 0.08 * spread, 0)), 0.3 * spread, turn);
+  }
+
   // ---- 枝：一度下がり、先端が持ち上がって塊を支える ----
-  const nb = 7 + Math.floor(rnd() * 4);
+  const nb = tiered ? 0 : 7 + Math.floor(rnd() * 4);
   for (let i = 0; i < nb; i++) {
     const t = 0.3 + (0.64 * i) / (nb - 1) + (rnd() - 0.5) * 0.05;
     const P = trunk.getPointAt(Math.min(0.96, t));
@@ -224,20 +315,20 @@ export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukit
       P.clone().addScaledVector(dir, L).add(new THREE.Vector3(0, -droop * 0.3 + 0.12, 0)),
     ]);
     const rb = r0 * (0.5 - 0.22 * t);
-    barkGeos.push(taperTube(curve, 12, 7, rb, 0.025));
+    barkGeos.push(taperTube(curve, low ? 5 : 12, low ? 3 : 7, rb, 0.025));
     branchSnow(curve, rb, 0.03);
     const end = curve.getPointAt(1);
     const R = (0.36 + 0.2 * rnd()) * spread * (1.05 - 0.35 * t);
     addPad(end.clone().add(new THREE.Vector3(0, R * 0.22, 0)), R, az);
     // 先端近くで扇状に分かれる小枝と小さな塊
-    const forks = L > 0.7 ? 2 : 1;
+    const forks = low ? 1 : L > 0.7 ? 2 : 1;
     for (let f = 0; f < forks; f++) {
       const fork = curve.getPointAt(0.55 + rnd() * 0.15);
       const fa = az + (f % 2 ? 1 : -1) * (0.55 + rnd() * 0.45);
       const fdir = new THREE.Vector3(Math.cos(fa), 0, Math.sin(fa));
       const fend = fork.clone().addScaledVector(fdir, L * (0.3 + rnd() * 0.2)).add(new THREE.Vector3(0, 0.06 + rnd() * 0.12, 0));
       const fc = new THREE.CatmullRomCurve3([fork, fork.clone().lerp(fend, 0.5).add(new THREE.Vector3(0, -0.04, 0)), fend]);
-      barkGeos.push(taperTube(fc, 6, 5, rb * 0.45, 0.015));
+      barkGeos.push(taperTube(fc, low ? 3 : 6, low ? 3 : 5, rb * 0.45, 0.015));
       lump(fend.clone().add(new THREE.Vector3(0, R * 0.18, 0)), R * (0.6 + rnd() * 0.15), fa);
     }
   }
@@ -264,22 +355,13 @@ export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukit
     }
   }
   // 樹冠
-  const top = trunk.getPointAt(1);
-  addPad(top.clone().add(new THREE.Vector3(0, 0.12 * spread, 0)), 0.42 * spread, turn);
+  if (!tiered) {
+    const top = trunk.getPointAt(1);
+    addPad(top.clone().add(new THREE.Vector3(0, 0.12 * spread, 0)), 0.42 * spread, turn);
+  }
 
-  const group = new THREE.Group();
-  const add = (geos, mat) => {
-    const m = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos) : geos[0], mat);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    group.add(m);
-    return m;
-  };
-  add(barkGeos, A.bark);
-  add(coreGeos, A.coreMat);
-  const needles = add([fol.geometry()], A.needles);
-  needles.customDepthMaterial = A.needleDepth;
-  add(snowGeos, snowMat);
+  const merge = (geos) => (geos.length ? (geos.length > 1 ? mergeGeometries(geos) : geos[0]) : null);
+  const out = { bark: merge(barkGeos), core: merge(coreGeos), needles: fol.geometry(), snow: null, straw: null };
 
   if (yukitsuri) {
     // 雪吊り：幹に沿う柱の先から縄を放射状に張る
@@ -309,10 +391,10 @@ export function makePine({ height = 3, spread = 1.5, lean = 0.8, seed = 1, yukit
       band.translate(kc.x, kc.y + dy, kc.z);
       straw.push(band);
     }
-    add(straw, A.straw);
+    out.straw = merge(straw);
     // 柱の頭の雪
-    const capSnow = placed(A.snow, tip.clone().add(new THREE.Vector3(0, 0.22, 0)), new THREE.Vector3(0.16, 0.1, 0.16));
-    add([capSnow], snowMat);
+    snowGeos.push(placed(A.snow, tip.clone().add(new THREE.Vector3(0, 0.22, 0)), new THREE.Vector3(0.16, 0.1, 0.16)));
   }
-  return group;
+  out.snow = merge(snowGeos);
+  return out;
 }
