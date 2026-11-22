@@ -49,6 +49,118 @@ export class BellAudio {
     this.reverb.connect(this.reverbGain).connect(this.master);
 
     this.startWind();
+    this.startBgm();
+  }
+
+  // ---- 幻想的な BGM（陰旋法・その場で合成） ----
+  // E♭ の陰旋法（E♭・E・A♭・B♭・B）。鐘の基音（約78Hz = E♭2）と同じ調で濁らない。
+  startBgm() {
+    const ctx = this.ctx;
+    this.bgm = ctx.createGain();
+    this.bgm.gain.setValueAtTime(0.0001, ctx.currentTime);
+    this.bgm.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 8);
+    this.bgm.connect(this.master);
+    // 残響への送りも BGM の音量つまみの後ろから取る
+    this.bgmVerb = ctx.createGain();
+    this.bgmVerb.gain.value = 1.4;
+    this.bgm.connect(this.bgmVerb).connect(this.reverb);
+    const root = 77.78;
+    const steps = [0, 1, 5, 7, 8]; // 半音
+    this.scale = (degree, octave) => {
+      const n = steps.length;
+      const o = Math.floor(degree / n) + octave;
+      const st = steps[((degree % n) + n) % n];
+      return root * Math.pow(2, o + st / 12);
+    };
+    // 低い持続音（E♭ と B♭）
+    for (const [f, v] of [[root, 0.05], [root * 1.5, 0.03], [root * 2, 0.025]]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = v;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.05 + Math.random() * 0.05;
+      const lg = ctx.createGain();
+      lg.gain.value = v * 0.6;
+      lfo.connect(lg).connect(g.gain);
+      o.connect(g).connect(this.bgm);
+      o.start(); lfo.start();
+    }
+    const padLoop = () => {
+      this.bgmPad();
+      this.padTimer = setTimeout(padLoop, 7000 + Math.random() * 5000);
+    };
+    const sparkleLoop = () => {
+      this.bgmSparkle();
+      this.sparkleTimer = setTimeout(sparkleLoop, 1800 + Math.random() * 4200);
+    };
+    padLoop();
+    this.sparkleTimer = setTimeout(sparkleLoop, 3000);
+  }
+
+  // ゆっくり膨らんで消える和音
+  bgmPad() {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.05;
+    const dur = 13;
+    const start = Math.floor(Math.random() * 5);
+    const notes = [start, start + 2, start + (Math.random() < 0.5 ? 4 : 3)];
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(500, t);
+    lp.frequency.linearRampToValueAtTime(1100, t + dur * 0.45);
+    lp.frequency.linearRampToValueAtTime(450, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 4.5);
+    g.gain.linearRampToValueAtTime(0.04, t + dur - 5);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    lp.connect(g);
+    g.connect(this.bgm);
+    for (const d of notes) {
+      const f = this.scale(d, 2);
+      for (const det of [-5, 5]) {
+        const o = ctx.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = f;
+        o.detune.value = det;
+        o.connect(lp);
+        o.start(t);
+        o.stop(t + dur + 0.1);
+      }
+    }
+  }
+
+  // 遠くの風鈴・琴の余韻のような高い音
+  bgmSparkle() {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const count = Math.random() < 0.3 ? 2 : 1;
+    for (let k = 0; k < count; k++) {
+      const t = ctx.currentTime + 0.05 + k * (0.18 + Math.random() * 0.25);
+      const f = this.scale(Math.floor(Math.random() * 8), 4);
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      const g = ctx.createGain();
+      const v = 0.012 + Math.random() * 0.014;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 3.5);
+      let tail = g;
+      if (pan) { pan.pan.value = (Math.random() - 0.5) * 1.4; g.connect(pan); tail = pan; }
+      tail.connect(this.bgm);
+      for (const [mul, amp] of [[1, 1], [2.76, 0.25], [5.4, 0.08]]) {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = f * mul;
+        const og = ctx.createGain();
+        og.gain.value = amp;
+        o.connect(og).connect(g);
+        o.start(t);
+        o.stop(t + 3.6);
+      }
+    }
   }
 
   impulse(seconds, decay) {
@@ -81,11 +193,11 @@ export class BellAudio {
     lp.type = 'lowpass';
     lp.frequency.value = 380;
     const g = ctx.createGain();
-    g.gain.value = 0.03;
+    g.gain.value = 0.015;
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.09;
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.018;
+    lfoGain.gain.value = 0.009;
     lfo.connect(lfoGain).connect(g.gain);
     src.connect(lp).connect(g).connect(this.master);
     src.start();
@@ -94,7 +206,7 @@ export class BellAudio {
   }
 
   crackle() {
-    if (!this.ctx || this.muted || Math.random() > 0.35) return;
+    if (!this.ctx || this.muted || Math.random() > 0.25) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const src = ctx.createBufferSource();
@@ -103,7 +215,7 @@ export class BellAudio {
     hp.type = 'bandpass';
     hp.frequency.value = 1500 + Math.random() * 2500;
     const g = ctx.createGain();
-    const v = 0.02 + Math.random() * 0.05;
+    const v = 0.008 + Math.random() * 0.02;
     g.gain.setValueAtTime(v, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.04);
     src.connect(hp).connect(g).connect(this.master);

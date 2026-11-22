@@ -2,15 +2,12 @@
 import { World, TEMPLE_DEFS } from './world.js';
 import { BellAudio } from './audio.js';
 import { BONNOU } from './bonnou.js';
-import { SWING } from './shoro.js';
 
 const $ = (id) => document.getElementById(id);
 
 const PULL_TIME = 1.4;    // 最大まで引くのにかかる秒数
 const COMBO_WIN = 0.35;   // 遠くの鐘と「同時」とみなす時間差（秒）
 const YOIN_TAU = 2.4;     // 余韻の減衰時定数（秒）
-// 振り子が最大角から鐘に届くまでのおおよその時間
-const SWING_TIME = (Math.PI / 2) / Math.sqrt(SWING.omega2) * (1 + SWING.maxAngle ** 2 / 16);
 
 const audio = new BellAudio();
 let world;
@@ -33,43 +30,86 @@ const game = {
 const input = { holding: false, pull: 0 };
 let time = 0;
 
-// ---- 遠くの寺のスケジュール ----
+// ---- 遠くの寺：和尚の動き ----
+// 和尚は本番の前に撞木を小さく引いて戻す「ためし引き」を0〜2回入れ、
+// 引く速さも毎回変わる。プレイヤーは和尚の引き方を見て、鳴る瞬間を読む。
 const temples = TEMPLE_DEFS.map((d, i) => ({
   def: d,
   idx: i,
-  next: 4 + i * 2.7,
-  period: d.period,
+  active: true, // 起動時は 3D 側も全寺が有効。最初の updateActiveTemples で整える
+  plan: null,
   lastRing: -99,
-  released: false,
 }));
 
-function scheduleTemple(t, from) {
-  t.next = from + t.period * (0.93 + Math.random() * 0.14);
-  t.released = false;
+function planTemple(t, start) {
+  const segs = [];
+  let at = start;
+  const feints = Math.floor(Math.random() * 3);
+  for (let k = 0; k < feints; k++) {
+    const dur = 0.9 + Math.random() * 0.6;
+    segs.push({ type: 'feint', start: at, dur, amp: 0.22 + Math.random() * 0.25 });
+    at += dur + 0.15 + Math.random() * 0.5;
+  }
+  const dur = 1.0 + Math.random() * 0.9;
+  segs.push({ type: 'pull', start: at, dur, amp: 0.75 + Math.random() * 0.2 });
+  t.plan = { segs, released: false };
+}
+
+function activeTempleCount() {
+  if (game.state === 'title' || game.state === 'end') return 1;
+  const every = game.total >= 108 ? 30 : Math.max(2, Math.round((game.total * 30) / 108));
+  return Math.min(TEMPLE_DEFS.length, 1 + Math.floor(game.count / every));
+}
+
+function updateActiveTemples(announce) {
+  const n = activeTempleCount();
+  for (const t of temples) {
+    const on = t.def.join < n;
+    if (on !== t.active) {
+      t.active = on;
+      world.setTempleActive(t.idx, on);
+      if (on && announce) popup(`${t.def.name}も鐘をつき始めた`, '和尚の引き方を見て、同時に鳴らそう', 'reso');
+    }
+    templeEls[t.idx].classList.toggle('off', !on);
+    if (!on) t.plan = null;
+    else if (!t.plan) planTemple(t, time + 2 + Math.random() * 2);
+  }
 }
 
 function updateTemples(dt) {
   for (const t of temples) {
+    if (!t.active) continue;
     const wt = world.temples[t.idx];
-    const releaseAt = t.next - SWING_TIME;
-    const pullStart = releaseAt - PULL_TIME;
-    if (wt.shumoku.state === 'idle' || wt.shumoku.state === 'pull') {
-      if (time >= pullStart && time < releaseAt) {
-        const p = Math.min(1, (time - pullStart) / PULL_TIME);
-        wt.shumoku.setPull(0.85 * (1 - Math.pow(1 - p, 2)), dt);
-      } else if (time >= releaseAt && !t.released) {
-        t.released = true;
-        if (wt.shumoku.state === 'pull') wt.shumoku.release(0.85);
+    const sh = wt.shumoku;
+    const plan = t.plan;
+    if (plan && (sh.state === 'idle' || sh.state === 'pull')) {
+      let target = 0;
+      for (const seg of plan.segs) {
+        const u = (time - seg.start) / seg.dur;
+        if (u < 0) break;
+        if (seg.type === 'feint' && u <= 1) target = seg.amp * Math.sin(Math.PI * u);
+        if (seg.type === 'pull') {
+          if (u < 1) target = seg.amp * (1 - Math.pow(1 - u, 2));
+          else if (!plan.released) {
+            plan.released = true;
+            sh.release(seg.amp);
+          }
+        }
+      }
+      if (!plan.released && (target > 0.001 || sh.state === 'pull')) sh.setPull(target, dt);
+      if (!plan.released && target <= 0.001 && sh.state === 'pull' && Math.abs(sh.theta) < 0.003) {
+        sh.theta = 0;
+        sh.state = 'idle';
       }
     }
-    const hit = wt.shumoku.update(dt);
+    const hit = sh.update(dt);
     if (hit > 0) onTempleRing(t, hit);
   }
 }
 
 function onTempleRing(t, power) {
   t.lastRing = time;
-  scheduleTemple(t, time);
+  planTemple(t, time + t.def.period - 3.2 + (Math.random() - 0.5) * 2.4);
   world.ringTemple(t.idx, power);
   // 距離に応じた遅れはごく僅かなので省略
   audio.distantBell(power, t.def.pitch, t.def.pan, t.def.vol);
@@ -88,7 +128,7 @@ function onTempleRing(t, power) {
 const templeEls = TEMPLE_DEFS.map((d) => {
   const el = document.createElement('div');
   el.className = 'temple';
-  el.innerHTML = `<div class="ring"><div class="dot"></div></div><div class="name">${d.name}</div>`;
+  el.innerHTML = `<div class="view"></div><div class="name">${d.name}</div>`;
   $('temples').appendChild(el);
   return el;
 });
@@ -161,6 +201,7 @@ function onPlayerStrike(power) {
 
   const yoin = yoinNow();
   game.count++;
+  updateActiveTemples(true);
   vanishBonnou();
 
   // 強さ
@@ -299,6 +340,7 @@ function showTitle() {
   $('result').classList.add('hidden');
   $('hud').classList.add('hidden');
   world.dawn = 0;
+  updateActiveTemples(false);
   const b108 = loadBest(108), b12 = loadBest(12);
   $('best').textContent = b108 || b12 ? `最高得点　百八打: ${b108}　十二打: ${b12}` : '';
 }
@@ -317,6 +359,7 @@ function startGame(total) {
   game.pending = [];
   game.state = 'play';
   world.dawn = 0;
+  updateActiveTemples(false);
   $('title').classList.add('hidden');
   $('result').classList.add('hidden');
   $('hud').classList.remove('hidden');
@@ -403,10 +446,16 @@ function frame(now) {
   $('gaugeMarker').style.height = `${(input.holding ? input.pull : 0) * 100}%`;
   const y = Math.max(0, Math.min(1, yoinNow()));
   $('yoinRing').style.setProperty('--y', y.toFixed(3));
-  for (const t of temples) {
-    const p = 1 - Math.max(0, t.next - time) / t.period;
-    templeEls[t.idx].style.setProperty('--p', Math.max(0, Math.min(1, p)).toFixed(3));
+  // 遠見の小窓：鳴らしている寺の和尚を望遠で映す
+  const insets = [];
+  if (game.state !== 'title' && game.state !== 'end') {
+    for (const t of temples) {
+      if (!t.active) continue;
+      const r = templeEls[t.idx].querySelector('.view').getBoundingClientRect();
+      if (r.width > 0) insets.push({ idx: t.idx, rect: r });
+    }
   }
+  world.insets = insets;
 
   world.update(dt, time);
   requestAnimationFrame(frame);

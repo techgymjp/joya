@@ -60,22 +60,21 @@ html, body {
 }
 .icon-btn.off { opacity: 0.4; text-decoration: line-through; }
 
-/* 遠くの寺の予兆 */
+/* 遠見（望遠）の小窓：中は 3D の実映像 */
 .temples { display: flex; gap: 10px; }
 .temple { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.temple { --p: 0; }
-.temple .ring {
-  width: 34px; height: 34px; border-radius: 50%;
-  background: conic-gradient(var(--gold) calc(var(--p) * 360deg), rgba(255,255,255,0.12) 0);
-  display: grid; place-items: center;
-  box-shadow: 0 0 calc(var(--p) * var(--p) * 18px) rgba(232,194,122,0.7);
+.temple.off { display: none; }
+.temple .view {
+  width: 150px; height: 100px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.6), inset 0 0 18px rgba(0,0,0,0.6);
 }
-.temple .dot { width: 24px; height: 24px; border-radius: 50%; background: rgba(10,12,24,0.9); }
 .temple .name { font-size: 11px; color: var(--ink-dim); white-space: nowrap; text-shadow: 0 1px 3px #000; }
-.temple.flash .dot { animation: flash 0.9s ease-out; }
+.temple.flash .view { animation: flash 1s ease-out; }
 @keyframes flash {
-  0% { background: #fff4d8; box-shadow: 0 0 20px 8px rgba(255,220,150,0.9); }
-  100% { background: rgba(10,12,24,0.9); box-shadow: none; }
+  0% { border-color: #ffe9b0; box-shadow: 0 0 22px 6px rgba(255,220,150,0.8); }
+  100% { border-color: var(--line); box-shadow: 0 2px 12px rgba(0,0,0,0.6); }
 }
 
 /* 引きゲージ・余韻 */
@@ -215,9 +214,8 @@ h1 {
   .hud-box.right { padding-right: 44px; }
   .count { font-size: 22px; }
   .score { font-size: 20px; }
-  .temples { position: absolute; top: 72px; left: 50%; transform: translateX(-50%); }
-  .temple .ring { width: 28px; height: 28px; }
-  .temple .dot { width: 20px; height: 20px; }
+  .temples { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); gap: 6px; }
+  .temple .view { width: 104px; height: 72px; }
   .gauge { left: 10px; }
   .howto { font-size: 14px; }
 }

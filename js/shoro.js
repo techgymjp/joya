@@ -282,7 +282,69 @@ export function makeBell(mats, { detail = true } = {}) {
 
 // ---- 鐘楼一式 ----
 // 原点 = 地面中央。鐘は x=0,z=0 に吊られ、撞木は -X 側から打つ。
-export function makeShoro(mats, { detail = true } = {}) {
+// ---- 和尚（遠くの寺で鐘をつく人） ----
+// 鐘楼のローカル座標で、引き綱を握る手の位置に合わせて体と腕を動かす
+function makeMonk(mats) {
+  const robe = mats.robe || new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.95 });
+  const kesa = mats.kesa || new THREE.MeshStandardMaterial({ color: 0xb07a22, roughness: 0.8 });
+  const skin = mats.skin || new THREE.MeshStandardMaterial({ color: 0xd8b08a, roughness: 0.7 });
+  const body = new THREE.Group(); // 足元が原点、+X（鐘の方）を向く
+  const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
+    m.castShadow = true;
+    body.add(m);
+    return m;
+  };
+  add(new THREE.CylinderGeometry(0.2, 0.34, 1.05, 14), robe, 0, 0.53, 0);     // 裾の広い法衣
+  add(new THREE.CylinderGeometry(0.17, 0.21, 0.42, 14), robe, 0, 1.25, 0);     // 胴
+  add(new THREE.CylinderGeometry(0.215, 0.255, 0.55, 14, 1, true, Math.PI * 0.15, Math.PI * 0.9), kesa, 0, 1.12, 0); // 袈裟
+  add(new THREE.BoxGeometry(0.05, 0.62, 0.05), kesa, 0.02, 1.2, 0.0, 0.62, 0, 0); // 肩からの袈裟の帯
+  add(new THREE.CylinderGeometry(0.05, 0.06, 0.08, 10), skin, 0, 1.49, 0);     // 首
+  add(new THREE.SphereGeometry(0.105, 16, 12), skin, 0.01, 1.62, 0);           // 剃髪の頭
+  add(new THREE.SphereGeometry(0.03, 8, 6), skin, 0.0, 1.6, 0.1);              // 耳
+  add(new THREE.SphereGeometry(0.03, 8, 6), skin, 0.0, 1.6, -0.1);
+  for (const sz of [-1, 1]) add(new THREE.BoxGeometry(0.22, 0.06, 0.1), mats.darkWood || robe, 0.04, 0.03, sz * 0.1); // 草履
+  const group = new THREE.Group();
+  group.add(body);
+  // 腕（袖）は鐘楼ローカルで毎フレーム置き直す
+  const armGeo = new THREE.CylinderGeometry(0.05, 0.075, 1, 8);
+  const handGeo = new THREE.SphereGeometry(0.04, 8, 6);
+  const arms = [0, 1].map(() => {
+    const a = new THREE.Mesh(armGeo, robe);
+    a.castShadow = true;
+    const h = new THREE.Mesh(handGeo, skin);
+    return { a, h };
+  });
+  const up = new THREE.Vector3(0, 1, 0);
+  const sh = new THREE.Vector3(), hd = new THREE.Vector3(), dir = new THREE.Vector3();
+  function update(hand, pull) {
+    // 引くほど後ろ（-X）へ体重をかけ、半歩下がる
+    const lean = 0.08 + pull * 0.32;
+    const footX = hand.x - 0.5 - pull * 0.12;
+    group.position.set(footX, 0, hand.z);
+    body.rotation.z = lean;
+    const cs = Math.cos(lean), sn = Math.sin(lean);
+    [-1, 1].forEach((side, i) => {
+      // 肩（体の傾きを反映）
+      const lx = 0.02, ly = 1.42;
+      sh.set(footX + lx * cs - ly * sn, lx * sn + ly * cs, hand.z + side * 0.17);
+      // 手：綱の上で前後に並べて握る
+      hd.set(hand.x - (i ? 0.13 : 0), hand.y - (i ? 0.03 : 0), hand.z + side * 0.05);
+      const { a, h } = arms[i];
+      dir.copy(hd).sub(sh);
+      const len = dir.length();
+      a.position.copy(sh).addScaledVector(dir, 0.5);
+      a.scale.set(1, len, 1);
+      a.quaternion.setFromUnitVectors(up, dir.normalize());
+      h.position.copy(hd);
+    });
+  }
+  return { group, parts: arms.flatMap(({ a, h }) => [a, h]), update };
+}
+
+export function makeShoro(mats, { detail = true, monk = false } = {}) {
   const root = new THREE.Group();
   const PX = 2.2, PZ = 1.7;
   const PLAT = 0.5, TOP = 4.35;
@@ -398,13 +460,15 @@ export function makeShoro(mats, { detail = true } = {}) {
     return m;
   });
   // 引き綱
-  let pullRope = null;
-  if (detail) {
-    pullRope = new THREE.Mesh(new THREE.BufferGeometry(), ropeMat);
-    pullRope.castShadow = true;
-    root.add(pullRope);
-  }
+  const pullRope = new THREE.Mesh(new THREE.BufferGeometry(), ropeMat);
+  pullRope.castShadow = true;
+  root.add(pullRope);
   const handRest = new THREE.Vector3(logRestX - LOG_LEN / 2 - 1.6, 1.25, 0.45);
+  let monkFig = null;
+  if (monk) {
+    monkFig = makeMonk(mats);
+    root.add(monkFig.group, ...monkFig.parts);
+  }
 
   const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
   function setLogAngle(theta, pull = 0) {
@@ -428,13 +492,14 @@ export function makeShoro(mats, { detail = true } = {}) {
       const tail = hand.clone().add(new THREE.Vector3(-0.15, -0.9, 0.1));
       const curve = new THREE.CatmullRomCurve3([end, end.clone().lerp(mid, 0.5).setY(end.y - sag * 0.6), mid, hand, tail]);
       pullRope.geometry.dispose();
-      pullRope.geometry = new THREE.TubeGeometry(curve, 40, 0.022, 6, false);
+      pullRope.geometry = new THREE.TubeGeometry(curve, detail ? 40 : 16, 0.022, detail ? 6 : 4, false);
+      if (monkFig) monkFig.update(hand, pull);
     }
   }
   setLogAngle(0);
 
   return {
-    root, bellPivot, bell, log, setLogAngle,
+    root, bellPivot, bell, log, setLogAngle, monk: monkFig,
     strikePoint: new THREE.Vector3(strikeX, strikeWorldY, 0),
     bellCenter: new THREE.Vector3(0, BELL_BASE + 0.8, 0),
     ropeLength: ROPE_L,

@@ -203,3 +203,50 @@ export function emberTexture(seed = 7) {
   speckle(ctx, 128, 128, 400, 5, ['#ff6a10', '#ffb040', '#a02800'], rnd, 0.6);
   return toTex(c);
 }
+
+// 松の樹皮（赤茶の亀甲状の割れ）
+export function pineBarkTexture(seed = 31) {
+  const rnd = rand(seed);
+  const [c, ctx] = canvas(256, 512);
+  ctx.fillStyle = '#4a2c1e';
+  ctx.fillRect(0, 0, 256, 512);
+  for (let y = 0; y < 512; y += 22 + rnd() * 10) {
+    for (let x = -20; x < 256; x += 30 + rnd() * 20) {
+      const w = 26 + rnd() * 18, h = 18 + rnd() * 12;
+      ctx.fillStyle = `hsl(${14 + rnd() * 10}, ${30 + rnd() * 20}%, ${18 + rnd() * 14}%)`;
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.2, y);
+      ctx.lineTo(x + w * 0.85, y + rnd() * 3);
+      ctx.lineTo(x + w, y + h * 0.6);
+      ctx.lineTo(x + w * 0.7, y + h);
+      ctx.lineTo(x + w * 0.1, y + h * 0.9);
+      ctx.lineTo(x, y + h * 0.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(10,4,2,0.8)';
+      ctx.lineWidth = 2 + rnd() * 2;
+      ctx.stroke();
+    }
+  }
+  speckle(ctx, 256, 512, 500, 2, ['#1a0d06', '#7a5038'], rnd, 0.3);
+  return toTex(c);
+}
+
+// 松葉（細かい針状の葉）
+export function needleTexture(seed = 32) {
+  const rnd = rand(seed);
+  const [c, ctx] = canvas(256, 256);
+  ctx.fillStyle = '#1b3020';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2600; i++) {
+    const x = rnd() * 256, y = rnd() * 256;
+    const a = rnd() * Math.PI * 2, l = 5 + rnd() * 9;
+    ctx.strokeStyle = `hsla(${120 + rnd() * 30}, ${30 + rnd() * 25}%, ${12 + rnd() * 22}%, 0.9)`;
+    ctx.lineWidth = 0.8 + rnd() * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    ctx.stroke();
+  }
+  return toTex(c, { repeat: [2, 2] });
+}
