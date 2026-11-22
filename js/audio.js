@@ -23,6 +23,129 @@ const CLANG = [[9.1, 0.12, 0.5], [11.7, 0.08, 0.35], [14.3, 0.05, 0.25], [17.9, 
 // 全体の音量（スマホは鳴らない低音をカットする分、聞こえる帯域を大きくできる）
 const MASTER = LOW ? 2.6 : 2.1;
 
+// ---- 梵鐘の合成（ロード中の「録音」と、録音が使えないときの予備で共用） ----
+// ctx: AudioContext か OfflineAudioContext、master / reverb: つなぎ先、t: 鳴らす時刻
+const noiseCache = new WeakMap();
+function noiseOf(ctx) {
+  if (!noiseCache.has(ctx)) {
+    const len = Math.floor(ctx.sampleRate * 0.3);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    noiseCache.set(ctx, buf);
+  }
+  return noiseCache.get(ctx);
+}
+function synthBell(ctx, master, reverb, t, power, opts = {}) {
+  {
+    const { pitch = 1, gain = 1, cutoff = 7000, pan = 0, wet = 0.35, dry = 1 } = opts;
+    const base = 78 * pitch;
+    const vol = (0.15 + 0.85 * Math.pow(power, 1.1)) * gain;
+    const durMul = 0.5 + 0.55 * power;
+
+    const out = ctx.createGain();
+    out.gain.value = vol * 0.16;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = cutoff * (0.55 + 0.45 * power);
+    lp.Q.value = 0.5;
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    out.connect(lp);
+    let tail = lp;
+    if (panner) { panner.pan.value = pan; lp.connect(panner); tail = panner; }
+    const dryG = ctx.createGain();
+    dryG.gain.value = dry;
+    tail.connect(dryG).connect(master);
+    const wetG = ctx.createGain();
+    wetG.gain.value = wet;
+    tail.connect(wetG).connect(reverb);
+
+    let end = t;
+    for (const [ratio, amp, decay, beat, depth] of PARTIALS) {
+      const f = base * ratio * (1 + (Math.random() - 0.5) * 0.003);
+      // 強く撞くほど高い倍音まで鳴る
+      const bright = ratio > 3 ? 0.3 + 0.7 * power : 1;
+      const d = decay * durMul;
+      end = Math.max(end, t + d);
+      // 低い倍音はやや遅れて膨らむ（「ゴッ…ォーーン」）
+      const attack = ratio < 2.5 ? 0.06 : 0.012;
+      const pair = [[-beat / 2, 1], [beat / 2, depth]];
+      for (const [pi, [df, w]] of pair.entries()) {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = f + df;
+        const g = ctx.createGain();
+        const peak = amp * bright * w * 0.6;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(peak, t + attack);
+        // 最初の1秒で少し落ち、その後ゆっくり長く消える
+        g.gain.exponentialRampToValueAtTime(peak * 0.55, t + attack + 0.9);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+        // うなりの対を左右に少し振り分け、「おーん、おーん」を広がりのある響きに
+        if (ctx.createStereoPanner) {
+          const sp = ctx.createStereoPanner();
+          sp.pan.value = (pi ? 0.35 : -0.35) * (ratio > 1.5 ? 1 : 0.5);
+          o.connect(g).connect(sp).connect(out);
+        } else {
+          o.connect(g).connect(out);
+        }
+        o.start(t);
+        o.stop(t + d + 0.05);
+      }
+    }
+    // 金属の「ガン」
+    for (const [ratio, amp, decay] of CLANG) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = base * ratio * (1 + (Math.random() - 0.5) * 0.01);
+      const g = ctx.createGain();
+      const peak = amp * (0.2 + 0.8 * power);
+      g.gain.setValueAtTime(peak, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + decay * (0.6 + 0.4 * power));
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + decay + 0.05);
+    }
+    // 木の撞木が当たる鈍い「ゴッ」
+    const n = ctx.createBufferSource();
+    n.buffer = noiseOf(ctx);
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.value = 220 + 180 * power;
+    nf.Q.value = 0.8;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(1.4 * (0.3 + 0.7 * power), t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    n.connect(nf).connect(ng).connect(out);
+    n.start(t);
+    n.stop(t + 0.3);
+    const thud = ctx.createOscillator();
+    thud.frequency.setValueAtTime(base * 1.3, t);
+    thud.frequency.exponentialRampToValueAtTime(base * 0.7, t + 0.12);
+    const tg = ctx.createGain();
+    tg.gain.setValueAtTime(0.9 * (0.3 + 0.7 * power), t);
+    tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    thud.connect(tg).connect(out);
+    thud.start(t);
+    thud.stop(t + 0.25);
+
+    return { out, end };
+  }
+}
+
+
+// 録音しておく自分の鐘の強さ
+const MAIN_POWERS = [0.35, 0.65, 1.0];
+function makeImpulse(ctx, seconds, decay) {
+  const len = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return buf;
+}
+
 export class BellAudio {
   constructor() {
     this.ctx = null;
@@ -31,7 +154,8 @@ export class BellAudio {
 
   init() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      // 意図して止めている（ポーズ・広告など）ときは再開しない
+      if (this.ctx.state === 'suspended' && !this.held) this.ctx.resume();
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -66,13 +190,24 @@ export class BellAudio {
     out.gain.value = 1.0;
     this.master.connect(hp).connect(comp).connect(lim).connect(out).connect(ctx.destination);
 
-    // 残響（合成インパルス応答）
-    this.reverb = ctx.createConvolver();
-    // 残響（スマホは短くして計算を軽く）
-    this.reverb.buffer = LOW ? this.impulse(4.2, 2.3) : this.impulse(5.5, 2.2);
-    this.reverbGain = ctx.createGain();
-    this.reverbGain.gain.value = 0.5;
-    this.reverb.connect(this.reverbGain).connect(this.master);
+    // 残響：常に動く重い畳み込みはやめ、軽いエコー（遅延の帰還）にする（BGM・共鳴音・予備の合成用）
+    // 鐘の音の残響は、ロード中の「録音」に含めてある
+    this.reverb = ctx.createGain();
+    const wetOut = ctx.createGain();
+    wetOut.gain.value = 0.35;
+    for (const [dt, fb] of [[0.137, 0.55], [0.211, 0.5], [0.293, 0.45]]) {
+      const d = ctx.createDelay(1);
+      d.delayTime.value = dt;
+      const f = ctx.createGain();
+      f.gain.value = fb;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2200;
+      this.reverb.connect(d);
+      d.connect(lp).connect(f).connect(d);
+      lp.connect(wetOut);
+    }
+    wetOut.connect(this.master);
 
     this.startWind();
     this.startBgm();
@@ -200,17 +335,6 @@ export class BellAudio {
     await new Promise((r) => setTimeout(r, 200));
   }
 
-  impulse(seconds, decay) {
-    const ctx = this.ctx;
-    const len = Math.floor(ctx.sampleRate * seconds);
-    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-      const d = buf.getChannelData(ch);
-      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
-    }
-    return buf;
-  }
-
   noiseBuffer(seconds) {
     const ctx = this.ctx;
     const len = Math.floor(ctx.sampleRate * seconds);
@@ -264,108 +388,93 @@ export class BellAudio {
     src.stop(t + len + 0.02);
   }
 
-  // power: 0..1、opts: {pitch, gain, cutoff, pan, wet, dry}
-  bell(power, opts = {}) {
-    if (!this.ctx || this.muted) return;
-    const ctx = this.ctx;
-    const { pitch = 1, gain = 1, cutoff = 7000, pan = 0, wet = 0.35, dry = 1 } = opts;
-    const t = ctx.currentTime + 0.01;
-    const base = 78 * pitch;
-    const vol = (0.15 + 0.85 * Math.pow(power, 1.1)) * gain;
-    const durMul = 0.5 + 0.55 * power;
-
-    const out = ctx.createGain();
-    out.gain.value = vol * 0.16;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = cutoff * (0.55 + 0.45 * power);
-    lp.Q.value = 0.5;
-    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    out.connect(lp);
-    let tail = lp;
-    if (panner) { panner.pan.value = pan; lp.connect(panner); tail = panner; }
-    const dryG = ctx.createGain();
-    dryG.gain.value = dry;
-    tail.connect(dryG).connect(this.master);
-    const wetG = ctx.createGain();
-    wetG.gain.value = wet;
-    tail.connect(wetG).connect(this.reverb);
-
-    let end = t;
-    for (const [ratio, amp, decay, beat, depth] of PARTIALS) {
-      const f = base * ratio * (1 + (Math.random() - 0.5) * 0.003);
-      // 強く撞くほど高い倍音まで鳴る
-      const bright = ratio > 3 ? 0.3 + 0.7 * power : 1;
-      const d = decay * durMul;
-      end = Math.max(end, t + d);
-      // 低い倍音はやや遅れて膨らむ（「ゴッ…ォーーン」）
-      const attack = ratio < 2.5 ? 0.06 : 0.012;
-      const pair = [[-beat / 2, 1], [beat / 2, depth]];
-      for (const [pi, [df, w]] of pair.entries()) {
-        const o = ctx.createOscillator();
-        o.type = 'sine';
-        o.frequency.value = f + df;
-        const g = ctx.createGain();
-        const peak = amp * bright * w * 0.6;
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.linearRampToValueAtTime(peak, t + attack);
-        // 最初の1秒で少し落ち、その後ゆっくり長く消える
-        g.gain.exponentialRampToValueAtTime(peak * 0.55, t + attack + 0.9);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-        // うなりの対を左右に少し振り分け、「おーん、おーん」を広がりのある響きに
-        if (ctx.createStereoPanner) {
-          const sp = ctx.createStereoPanner();
-          sp.pan.value = (pi ? 0.35 : -0.35) * (ratio > 1.5 ? 1 : 0.5);
-          o.connect(g).connect(sp).connect(out);
-        } else {
-          o.connect(g).connect(out);
-        }
-        o.start(t);
-        o.stop(t + d + 0.05);
+  // ---- ロード中に鐘の音を「録音」しておく ----
+  // 鐘を撞くたびに数十個の発振器を20秒以上鳴らすと、スマホでは音の計算が追いつかず
+  // ビリつきや音切れの原因になる。同じ合成をあらかじめ一度だけ行い、撞くときは再生するだけにする
+  // （OfflineAudioContext はタップ前でも使える）
+  async prepare(distantPitches = [], onProgress = () => {}) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) return;
+    const SR = 22050; // 鐘の音は 1.5kHz 程度までが中心なので十分
+    const render = async (secs, power, opts) => {
+      const off = new OAC(2, Math.floor(SR * secs), SR);
+      const master = off.createGain();
+      master.connect(off.destination);
+      const reverb = off.createConvolver();
+      reverb.buffer = makeImpulse(off, 5.0, 2.2);
+      const rg = off.createGain();
+      rg.gain.value = 0.5;
+      reverb.connect(rg).connect(master);
+      synthBell(off, master, reverb, 0.01, power, opts);
+      const buf = await off.startRendering();
+      // 終わりの1秒で静かに消す
+      const fade = Math.floor(SR * 1);
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < fade; i++) d[d.length - fade + i] *= 1 - i / fade;
       }
+      return buf;
+    };
+    try {
+      // 並行して録音する
+      const jobs = MAIN_POWERS.length + distantPitches.length;
+      let done = 0;
+      const tick = (x) => { onProgress(++done / jobs); return x; };
+      const [main, dist] = await Promise.all([
+        Promise.all(MAIN_POWERS.map((p) => render(14, p, {}).then((buf) => tick({ power: p, buf })))),
+        Promise.all(distantPitches.map((pitch) => render(11, 0.85, { pitch, cutoff: 2600, wet: 0.9, dry: 0.75 }).then(tick))),
+      ]);
+      const distant = new Map(distantPitches.map((pitch, i) => [pitch, dist[i]]));
+      this.samples = { main, distant };
+    } catch (e) {
+      console.warn('bell pre-render failed', e);
     }
-    // 金属の「ガン」
-    for (const [ratio, amp, decay] of CLANG) {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = base * ratio * (1 + (Math.random() - 0.5) * 0.01);
-      const g = ctx.createGain();
-      const peak = amp * (0.2 + 0.8 * power);
-      g.gain.setValueAtTime(peak, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + decay * (0.6 + 0.4 * power));
-      o.connect(g).connect(out);
-      o.start(t);
-      o.stop(t + decay + 0.05);
-    }
-    // 木の撞木が当たる鈍い「ゴッ」
-    const n = ctx.createBufferSource();
-    n.buffer = this.thumpBuf || (this.thumpBuf = this.noiseBuffer(0.3));
-    const nf = ctx.createBiquadFilter();
-    nf.type = 'bandpass';
-    nf.frequency.value = 220 + 180 * power;
-    nf.Q.value = 0.8;
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(1.4 * (0.3 + 0.7 * power), t);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-    n.connect(nf).connect(ng).connect(out);
-    n.start(t);
-    n.stop(t + 0.3);
-    const thud = ctx.createOscillator();
-    thud.frequency.setValueAtTime(base * 1.3, t);
-    thud.frequency.exponentialRampToValueAtTime(base * 0.7, t + 0.12);
-    const tg = ctx.createGain();
-    tg.gain.setValueAtTime(0.9 * (0.3 + 0.7 * power), t);
-    tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    thud.connect(tg).connect(out);
-    thud.start(t);
-    thud.stop(t + 0.25);
-
-    setTimeout(() => { try { out.disconnect(); } catch { /* 既に切断済み */ } }, (end - t + 1) * 1000);
   }
 
-  // 遠くの寺の鐘：高音が少しこもり、残響多め。小さなスピーカーでも聞こえる音量にする
+  playSample(buf, gainValue, pan = 0) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.01;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 1 + (Math.random() - 0.5) * 0.008; // 毎回わずかに音程を揺らす
+    const g = ctx.createGain();
+    g.gain.value = gainValue;
+    let tail = src.connect(g);
+    if (pan && ctx.createStereoPanner) {
+      const sp = ctx.createStereoPanner();
+      sp.pan.value = pan;
+      tail = tail.connect(sp);
+    }
+    tail.connect(this.master);
+    src.start(t);
+    src.onended = () => { try { src.disconnect(); g.disconnect(); } catch { /* 既に切断済み */ } };
+  }
+
+  // 自分の鐘（power: 0..1）
+  bell(power) {
+    if (!this.ctx || this.muted) return;
+    if (this.samples) {
+      // いちばん近い強さの録音を選び、音量で差を埋める
+      let best = this.samples.main[0];
+      for (const m of this.samples.main) if (Math.abs(m.power - power) < Math.abs(best.power - power)) best = m;
+      const vol = (p) => 0.15 + 0.85 * Math.pow(p, 1.1);
+      this.playSample(best.buf, vol(power) / vol(best.power));
+      return;
+    }
+    const r = synthBell(this.ctx, this.master, this.reverb, this.ctx.currentTime + 0.01, power, {});
+    setTimeout(() => { try { r.out.disconnect(); } catch { /* 既に切断済み */ } }, (r.end - this.ctx.currentTime + 1) * 1000);
+  }
+
+  // 遠くの寺の鐘：高音が少しこもり、残響多め
   distantBell(power, pitch, pan, distanceGain = 0.55) {
-    this.bell(power, { pitch, gain: distanceGain * 0.8, cutoff: 2600, pan, wet: 0.9, dry: 0.75 });
+    if (!this.ctx || this.muted) return;
+    const buf = this.samples && this.samples.distant.get(pitch);
+    if (buf) {
+      this.playSample(buf, distanceGain * 0.8 * (0.15 + 0.85 * Math.pow(power, 1.1)) / (0.15 + 0.85 * Math.pow(0.85, 1.1)), pan);
+      return;
+    }
+    const r = synthBell(this.ctx, this.master, this.reverb, this.ctx.currentTime + 0.01, power, { pitch, gain: distanceGain * 0.8, cutoff: 2600, pan, wet: 0.9, dry: 0.75 });
+    setTimeout(() => { try { r.out.disconnect(); } catch { /* 既に切断済み */ } }, (r.end - this.ctx.currentTime + 1) * 1000);
   }
 
   // 共鳴コンボ時の澄んだ響き

@@ -691,6 +691,18 @@ export class World {
     if (!on) t.shoro.setLogAngle(0, 0);
   }
 
+  // 共鳴したとき：自分の鐘を暖かく光らせる（鐘の発光と光の輪）
+  glowBell(level = 1) {
+    this.bellGlow = Math.max(this.bellGlow || 0, level);
+    if (!this.bellHalo) {
+      this.bellHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: TX.glowTexture('255,215,150'), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
+      this.bellHalo.position.copy(this.shoro.bellCenter);
+      this.bellHalo.scale.set(6, 6, 1);
+      this.scene.add(this.bellHalo);
+    }
+    this.addRing(this.shoro.bellCenter.clone(), 1, true);
+  }
+
   ringTemple(i, power) {
     const t = this.temples[i];
     t.bellSwing.v += 0.06;
@@ -720,6 +732,18 @@ export class World {
     }
 
     for (const f of this.fires) f.update(time);
+
+    // 共鳴の光をゆっくり消す
+    if (this.bellGlow > 0.001) {
+      this.bellGlow *= Math.exp(-dt * 0.9);
+      const g = this.bellGlow;
+      for (const m of [this.mats.bronze, this.mats.bronzeBand]) {
+        m.emissive.setRGB(1.0, 0.7, 0.35);
+        m.emissiveIntensity = g * 1.4;
+      }
+      this.bellHalo.material.opacity = g * 0.85;
+      this.bellHalo.scale.setScalar(5 + (1 - g) * 3);
+    }
 
     // 音の輪
     for (let i = this.rings.length - 1; i >= 0; i--) {

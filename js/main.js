@@ -279,6 +279,7 @@ function resolvePending() {
       const title = s.temples.size >= 2 ? tr('resoBig') : tr('reso');
       popup(tr('resoPop', title, game.combo), tr('resoSub', names, bonus), 'reso');
       audio.chime(game.combo);
+      world.glowBell(Math.min(1, 0.65 + 0.07 * game.combo * s.temples.size)); // 共鳴したら自分の鐘を光らせる
     } else if (game.combo > 0) {
       game.combo = 0;
       offerRedo(s);
@@ -311,6 +312,7 @@ function pressEnd() {
 window.addEventListener('pointerdown', (e) => {
   if (e.target.closest('button, .overlay:not(.hidden) .panel')) return;
   if (game.state === 'title') return;
+  if (game.offer && game.offer.shown) { dismissRedo(); return; } // 案内の外をタップしたら閉じて再開
   pressStart();
 });
 window.addEventListener('pointerup', pressEnd);
@@ -379,6 +381,9 @@ function startGame(total) {
   game.redoUsed = 0;
   game.offer = null;
   game.paused = false;
+  game.frozen = false;
+  releaseAudio('redo');
+  releaseAudio('pause');
   $('redo').classList.add('hidden');
   $('pause').classList.add('hidden');
   game.state = 'play';
@@ -477,7 +482,7 @@ $('pauseBtn').addEventListener('click', pauseGame);
 $('resume').addEventListener('click', resumeGame);
 $('pauseToTitle').addEventListener('click', async () => {
   await Ads.showInterstitial();
-  audio.resume();
+  releaseAudio('pause');
   showTitle();
 });
 $('redo').addEventListener('click', takeRedo);
@@ -485,8 +490,8 @@ $('adSettings').addEventListener('click', () => Ads.showPrivacyOptions());
 Ads.onReady(() => $('adSettings').classList.toggle('hidden', !Ads.privacyOptionsRequired));
 // 広告の表示中は音を止める
 Ads.setAudioHooks({
-  suspend: () => audio.suspend(),
-  resume: () => { if (!game.paused && !document.hidden) audio.resume(); },
+  suspend: () => holdAudio('ad'),
+  resume: () => releaseAudio('ad'),
 });
 $('mute').addEventListener('click', () => {
   audio.setMuted(!audio.muted);
@@ -498,11 +503,11 @@ let last = performance.now();
 function frame(now) {
   // スマホは秒 30 コマに抑える（毎フレームの負荷を下げ、音の計算に CPU を回す）
   if (Q.fps && now - last < 1000 / Q.fps - 3) { requestAnimationFrame(frame); return; }
-  // ポーズ中は時間を止める（景色の描画だけ続ける）
-  const dt = game.paused ? 0 : Math.min(0.05, (now - last) / 1000);
+  // ポーズ中・やり直しの案内中は時間を止める（景色の描画だけ続ける）
+  const dt = game.paused || game.frozen ? 0 : Math.min(0.05, (now - last) / 1000);
   last = now;
   time += dt;
-  updateRedoOffer();
+  updateRedoOffer(now);
 
   // 撞木を引く
   const sh = world.shumoku;
@@ -543,13 +548,30 @@ function frame(now) {
 function isPlaying() {
   return game.state === 'play' || game.state === 'countdown' || game.state === 'final';
 }
+// 音を止める理由（ポーズ・広告・別アプリ・やり直しの案内）を記録し、理由がすべてなくなったときだけ再開する
+// （ある場面で止めた音を、別の場面の条件で戻し忘れることがないように）
+const audioHolds = new Set();
+function holdAudio(reason) {
+  audioHolds.add(reason);
+  audio.held = true;
+  audio.suspend();
+}
+function releaseAudio(reason) {
+  audioHolds.delete(reason);
+  if (audioHolds.size === 0) {
+    audio.held = false;
+    audio.resume();
+  }
+}
+
 function pauseGame() {
   if (!isPlaying() || game.paused) return;
+  dismissRedo();
   game.paused = true;
   input.holding = false;
   if (world.shumoku.state === 'pull') world.shumoku.release(0.05);
   $('pause').classList.remove('hidden');
-  audio.suspend();
+  holdAudio('pause');
   Ads.setBanner(true);
 }
 async function resumeGame() {
@@ -559,14 +581,14 @@ async function resumeGame() {
   $('pause').classList.add('hidden');
   Ads.setBanner(false);
   game.paused = false;
-  audio.resume();
+  releaseAudio('pause');
 }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     pauseGame();
-    audio.suspend();
-  } else if (!game.paused && !Ads.showing) {
-    audio.resume();
+    holdAudio('hidden');
+  } else {
+    releaseAudio('hidden');
   }
 });
 // Android の戻るボタン：プレイ中はポーズ、遊び方はタイトルへ、タイトルと結果ではアプリを終了
@@ -590,23 +612,34 @@ function snapshot() {
 }
 function offerRedo(rec) {
   if (!Ads.rewardAvailable || game.state !== 'play' || game.redoUsed >= REDO_MAX) return;
-  // 途切れた様子を見届けられるよう、少し待ってから案内し、数秒で自動的に消す
-  game.offer = { snap: rec.snap, count: rec.count, at: time + 2.2, until: time + 7.2, shown: false };
+  // 途切れた様子を見届けられるよう、少し待ってから案内する
+  game.offer = { snap: rec.snap, count: rec.count, at: time + 2.2, shown: false };
 }
-function updateRedoOffer() {
+const REDO_SHOW_MS = 5000; // 案内を出しておく時間（この間はゲームの時間と音を止める）
+function updateRedoOffer(now) {
   const o = game.offer;
-  const el = $('redo');
   if (!o) return;
-  // 次の一打を撞いた、状態が変わった、時間切れ、のいずれかで取り下げる
-  if (game.count !== o.count || game.state !== 'play' || time > o.until) {
-    game.offer = null;
-    el.classList.add('hidden');
-    return;
-  }
-  if (!o.shown && time >= o.at && world.shumoku.ready && !input.holding) {
+  // 案内を出す前に次の一打を撞いた・状態が変わったときは取り下げる
+  if (!o.shown && (game.count !== o.count || game.state !== 'play')) { game.offer = null; return; }
+  if (!o.shown && time >= o.at && world.shumoku.ready && !input.holding && !game.paused) {
+    // 案内を出している間は、時間（遠くの和尚の動きも）と音を止める
     o.shown = true;
-    el.textContent = tr('redoBtn', REDO_MAX - game.redoUsed);
-    el.classList.remove('hidden');
+    o.shownAt = now;
+    game.frozen = true;
+    holdAudio('redo');
+    $('redo').textContent = tr('redoBtn', REDO_MAX - game.redoUsed);
+    $('redo').classList.remove('hidden');
+  }
+  if (o.shown && now - o.shownAt > REDO_SHOW_MS) dismissRedo();
+}
+// 案内を閉じてゲームを再開する（時間切れ・ほかの場所のタップ・ポーズ）
+function dismissRedo() {
+  const o = game.offer;
+  game.offer = null;
+  $('redo').classList.add('hidden');
+  if (o && o.shown) {
+    game.frozen = false;
+    releaseAudio('redo');
   }
 }
 async function takeRedo() {
@@ -614,9 +647,10 @@ async function takeRedo() {
   if (!o || !o.shown) return;
   game.offer = null;
   $('redo').classList.add('hidden');
-  game.paused = true; // 広告の間は時間を止める
+  // 時間は止めたまま広告へ（広告の音止めは Ads 側が 'ad' として行う）
   const result = await Ads.showRewarded();
-  game.paused = false;
+  game.frozen = false;
+  releaseAudio('redo');
   if (result !== 'rewarded') return; // 最後まで見たときだけ効く
   const s = o.snap;
   Object.assign(game, { count: s.count, score: s.score, combo: s.combo, maxCombo: s.maxCombo, stats: { ...s.stats }, lastStrikeT: s.lastStrikeT, lastPower: s.lastPower });
@@ -655,9 +689,11 @@ const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
     await nextFrame();
     await nextFrame();
     world = new World($('scene'));
-    window.__joya = { world, game }; // @web-only
-    setProgress(0.3);
-    await world.warmup(setProgress);
+    window.__joya = { world, game, audio }; // @web-only
+    setProgress(0.25);
+    await world.warmup((v) => setProgress(v * 0.75));
+    // 鐘の音をロード中に「録音」しておく（撞くときは再生するだけにして、スマホの音切れを防ぐ）
+    await audio.prepare(TEMPLE_DEFS.map((d) => d.pitch), (v) => setProgress(0.75 + v * 0.25));
     setProgress(1);
     $('version').textContent = window.APP_VERSION || '';
     showTitle();
