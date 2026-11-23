@@ -158,6 +158,12 @@ function setBonnou() {
   const w = game.state === 'countdown' ? '' : wordAt(game.count);
   el.textContent = w;
   el.classList.remove('vanish');
+  // 前の煩悩が上へ抜けてから、次の煩悩を少し遅れて浮かび上がらせる（文字が重なって読めないのを防ぐ）
+  el.classList.remove('appear');
+  el.style.opacity = '0';
+  void el.offsetWidth;
+  el.style.opacity = '';
+  el.classList.add('appear');
   $('bonnouCaption').textContent = w ? tr('caption', game.count + 1) : '';
 }
 
@@ -173,6 +179,7 @@ function vanishBonnou() {
   const el = $('bonnou');
   const ghost = el.cloneNode(true);
   ghost.removeAttribute('id');
+  ghost.classList.remove('appear'); // 浮かび上がりの設定を引き継がない（上へ抜ける動きが上書きされるため）
   ghost.classList.add('vanish');
   el.parentNode.appendChild(ghost);
   setTimeout(() => ghost.remove(), 1600);
@@ -695,7 +702,9 @@ const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
     // 鐘の音をロード中に「録音」しておく（撞くときは再生するだけにして、スマホの音切れを防ぐ）
     await audio.prepare(TEMPLE_DEFS.map((d) => d.pitch), (v) => setProgress(0.75 + v * 0.25));
     setProgress(1);
-    $('version').textContent = window.APP_VERSION || '';
+    // ビルド番号はアプリだけに出す（Web 版の 'dev' は表示しない）
+    const ver = window.APP_VERSION || '';
+    $('version').textContent = ver && ver !== 'dev' ? ver : '';
     showTitle();
     last = performance.now();
     requestAnimationFrame(frame);

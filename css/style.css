@@ -374,3 +374,25 @@ h1 {
 @media (max-height: 500px) {
   .redo { bottom: 10px; left: 10px; font-size: 12px; padding: 7px 13px; }
 }
+
+/* ---- 下見の指摘への対応 ---- */
+/* 判定の表示：ゲージと「余韻」の輪より右に出し、明るく濃い影で読みやすく */
+#popups { left: max(7%, 96px); }
+.popup { text-shadow: 0 0 10px rgba(0,0,0,0.95), 0 0 4px #000, 0 2px 2px #000; }
+.popup .p-sub { color: var(--ink); font-size: 15px; }
+@media (max-height: 500px) {
+  #popups { left: max(7%, 84px); bottom: 22%; }
+  .popup .p-sub { font-size: 13px; }
+}
+/* 煩悩の切り替わり：前の文字はすばやく上へ抜けて薄れ、次の文字は少し遅れて浮かび上がる */
+.bonnou.vanish { animation: vanishUp 0.9s ease-out forwards; }
+@keyframes vanishUp {
+  0% { opacity: 1; filter: blur(0); transform: translateY(0) scale(1); }
+  35% { opacity: 0.12; filter: blur(5px); transform: translateY(-34px) scale(1.08); }
+  100% { opacity: 0; filter: blur(12px); transform: translateY(-70px) scale(1.15); }
+}
+.bonnou.appear { animation: bonnouIn 0.7s ease-out 0.45s both; }
+@keyframes bonnouIn {
+  from { opacity: 0; transform: translateY(10px); filter: blur(3px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
