@@ -53,10 +53,16 @@
 **リリースノート（初回）**
 ```
 <ja-JP>
-除夜の鐘をリリースしました。大晦日の夜、百八の煩悩を払う鐘をついて新年を迎えましょう。
+除夜の鐘をリリースしました。
+・画面を長押しして撞木を引き、離して鐘をつく
+・遠くのお寺の和尚と同時に鳴らすと「共鳴」
+・百八の煩悩を払って、新年を迎えましょう
 </ja-JP>
 <en-US>
-Joya no Kane is here. Ring the temple bell 108 times and welcome the new year.
+Joya no Kane is here.
+- Touch and hold to pull the striker, let go to ring the bell
+- Ring together with the monks at distant temples for a "Resonance"
+- Clear away 108 earthly desires and welcome the new year
 </en-US>
 ```
 
